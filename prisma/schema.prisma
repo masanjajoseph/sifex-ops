@@ -1,0 +1,1215 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [uuidOssp(map: "uuid-ossp")]
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum CargoStatus {
+  INITIATED
+  ACCEPTED
+  RCS
+  LOADED
+  MANIFESTED
+  OFFLOADED
+  DEPARTED
+  IN_TRANSIT
+  ARRIVED
+  UNDER_CLEARANCE
+  CUSTOMS_QUERY
+  CUSTOMS_HOLD
+  RELEASED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  POD_SIGNED
+  CANCELLED
+}
+
+enum PaymentMode {
+  PP
+  CC
+}
+
+enum ShipmentType {
+  CAN_GUANGZHOU
+  HKG_HONGKONG
+  DXB_DUBAI
+  CAN_EXPRESS
+  MCO_EXPRESS
+}
+
+enum StationCode {
+  CAN
+  HKG
+  DAR
+  DXB
+  NBO
+  SHJ
+  JNB
+  MCT
+  BOM
+  ADD
+  ZNZ
+}
+
+enum BillingStatus {
+  NOT_BILLED
+  DRAFT
+  INVOICED
+  PARTIAL_PAID
+  PAID
+  REFUNDED
+}
+
+enum WarehouseStatus {
+  RECEIVED
+  RACKED
+  PICKED
+  LOADED
+  OFFLOADED
+  RELEASED
+  READY_FOR_DISPATCH
+  DISPATCHED
+}
+
+enum ManifestType {
+  EXPORT
+  IMPORT
+}
+
+enum CustomsStatus {
+  DECLARED
+  UNDER_REVIEW
+  CUSTOMS_HOLD
+  CUSTOMS_QUERY
+  APPROVED
+  RELEASED
+  REJECTED
+}
+
+// ============================================
+// RBAC & USER MANAGEMENT
+// ============================================
+
+model User {
+  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email         String    @unique
+  password      String
+  firstName     String    @map("first_name")
+  lastName      String    @map("last_name")
+  phone         String?
+  avatar        String?
+  isActive      Boolean   @default(true) @map("is_active")
+  emailVerified DateTime? @map("email_verified")
+  lastLoginAt   DateTime? @map("last_login_at")
+
+  organizationId String?       @map("organization_id") @db.Uuid
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  departmentId String?     @map("department_id") @db.Uuid
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  positionId String?   @map("position_id") @db.Uuid
+  position   Position? @relation(fields: [positionId], references: [id])
+
+  branchId String? @map("branch_id") @db.Uuid
+  branch   Branch? @relation(fields: [branchId], references: [id])
+
+  userStations  UserStation[]
+  userRoles     UserRole[]
+  rider         Rider?
+  createdAudits AuditLog[]    @relation("CreatedBy")
+
+  passwordResetToken  String?   @map("password_reset_token")
+  passwordResetExpiry DateTime? @map("password_reset_expiry")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("users")
+}
+
+model Role {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String  @unique
+  code        String  @unique
+  description String?
+  isSystem    Boolean @default(false) @map("is_system")
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String  @unique
+  code        String  @unique
+  module      String
+  description String?
+
+  rolePermissions RolePermission[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("permissions")
+}
+
+model UserRole {
+  id     String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  roleId String @map("role_id") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id           String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  grantedAt DateTime @default(now()) @map("granted_at")
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ============================================
+// TENANCY & ORGANIZATION
+// ============================================
+
+model Organization {
+  id       String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name     String
+  code     String  @unique
+  email    String?
+  phone    String?
+  address  String?
+  city     String?
+  country  String?
+  logo     String?
+  website  String?
+  isActive Boolean @default(true) @map("is_active")
+
+  users             User[]
+  customers         Customer[]
+  branches          Branch[]
+  stations          Station[]
+  settings          SystemSettings?
+  freightRates      FreightRate[]
+  quotationRequests QuotationRequest[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("organizations")
+}
+
+model Customer {
+  id             String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId String  @map("organization_id") @db.Uuid
+  type           String  @default("COMPANY")
+  name           String
+  code           String  @unique
+  email          String?
+  phone          String?
+  address        String?
+  city           String?
+  country        String?
+  taxId          String? @map("tax_id")
+
+  // KYC fields
+  contactPerson  String?   @map("contact_person")
+  contactPhone   String?   @map("contact_phone")
+  contactEmail   String?   @map("contact_email")
+  registrationNo String?   @map("registration_no")
+  kycStatus      String    @default("PENDING") @map("kyc_status")
+  kycVerifiedAt  DateTime? @map("kyc_verified_at")
+  kycVerifiedBy  String?   @map("kyc_verified_by") @db.Uuid
+
+  // Credit
+  creditLimit   Float  @default(0) @map("credit_limit")
+  creditBalance Float  @default(0) @map("credit_balance")
+  paymentTerms  String @default("NET30") @map("payment_terms")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  // Cargo relations
+  shipperFor  HouseAWB[] @relation("Shipper")
+  receiverFor HouseAWB[] @relation("Receiver")
+
+  // Quotes
+  quotationRequests QuotationRequest[]
+
+  // Billing
+  billingRecords BillingRecord[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([organizationId])
+  @@index([code])
+  @@map("customers")
+}
+
+// ============================================
+// ORGANIZATION STRUCTURE
+// ============================================
+
+model Department {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String  @unique
+  code        String  @unique
+  description String?
+  isActive    Boolean @default(true) @map("is_active")
+
+  users     User[]
+  positions Position[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("departments")
+}
+
+model Position {
+  id           String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name         String
+  code         String  @unique
+  description  String?
+  departmentId String  @map("department_id") @db.Uuid
+  isActive     Boolean @default(true) @map("is_active")
+
+  department Department @relation(fields: [departmentId], references: [id])
+  users      User[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("positions")
+}
+
+model Branch {
+  id             String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name           String  @unique
+  code           String  @unique
+  organizationId String  @map("organization_id") @db.Uuid
+  address        String?
+  city           String?
+  country        String?
+  phone          String?
+  email          String?
+  isActive       Boolean @default(true) @map("is_active")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  users        User[]
+  stations     Station[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("branches")
+}
+
+model Station {
+  id             String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name           String
+  code           StationCode
+  type           String
+  organizationId String      @map("organization_id") @db.Uuid
+  address        String?
+  city           String?
+  country        String?
+  branchId       String      @map("branch_id") @db.Uuid
+  isActive       Boolean     @default(true) @map("is_active")
+
+  organization       Organization         @relation(fields: [organizationId], references: [id])
+  branch             Branch               @relation(fields: [branchId], references: [id])
+  userStations       UserStation[]
+  warehouseZones     WarehouseZone[]
+  warehouseInventory WarehouseInventory[]
+
+  // Cargo relations
+  originMasterAWBs      MasterAWB[] @relation("OriginStation")
+  destinationMasterAWBs MasterAWB[] @relation("DestinationStation")
+  currentMasterAWBs     MasterAWB[] @relation("CurrentStation")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([organizationId, code])
+  @@map("stations")
+}
+
+model UserStation {
+  id        String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+  stationId String @map("station_id") @db.Uuid
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  @@unique([userId, stationId])
+  @@map("user_stations")
+}
+
+// ============================================
+// SYSTEM SETTINGS
+// ============================================
+
+model SystemSettings {
+  id                       String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId           String   @unique @map("organization_id") @db.Uuid
+  defaultCurrency          String   @default("USD") @map("default_currency")
+  exchangeRate             Float    @default(1.0) @map("exchange_rate")
+  taxPercentage            Float    @default(0) @map("tax_percentage")
+  defaultChargeableDivisor Int      @default(6000) @map("default_chargeable_divisor")
+  autoGenerateTracking     Boolean  @default(true) @map("auto_generate_tracking")
+  trackingPrefix           String   @default("SFX") @map("tracking_prefix")
+  companyName              String   @map("company_name")
+  companyCode              String   @map("company_code")
+  operationalStations      String[] @map("operational_stations")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
+
+// ============================================
+// FREIGHT RATE SYSTEM
+// ============================================
+
+model FreightRate {
+  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  shipmentType   ShipmentType @map("shipment_type")
+  ratePerKg      Float        @map("rate_per_kg")
+  currency       String       @default("USD")
+  isActive       Boolean      @default(true) @map("is_active")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([organizationId, shipmentType])
+  @@index([organizationId, isActive])
+  @@map("freight_rates")
+}
+
+// ============================================
+// QUOTATION MODULE
+// ============================================
+
+model QuotationRequest {
+  id             String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  customerId     String @map("customer_id") @db.Uuid
+  quoteNumber    String @unique @map("quote_number")
+  status         String @default("DRAFT")
+
+  // Cargo details
+  shipmentType     ShipmentType? @map("shipment_type")
+  description      String?
+  pieces           Int           @default(0)
+  weight           Float         @default(0)
+  volume           Float         @default(0)
+  chargeableWeight Float         @default(0) @map("chargeable_weight")
+
+  // Routing
+  originStationId      String? @map("origin_station_id")
+  destinationStationId String? @map("destination_station_id")
+
+  // Costs
+  freightCost       Float     @default(0) @map("freight_cost")
+  transportCost     Float     @default(0) @map("transport_cost")
+  warehouseCost     Float     @default(0) @map("warehouse_cost")
+  customsCost       Float     @default(0) @map("customs_cost")
+  consolidationCost Float     @default(0) @map("consolidation_cost")
+  totalAmount       Float     @default(0) @map("total_amount")
+  currency          String    @default("USD")
+  validUntil        DateTime? @map("valid_until")
+
+  // Relations
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  // Timestamps
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  deletedAt    DateTime?    @map("deleted_at")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([status])
+  @@map("quotation_requests")
+}
+
+// ============================================
+// CARGO DOMAIN — ENTERPRISE AIR CARGO
+// ============================================
+
+model MasterAWB {
+  id             String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+
+  // Identifiers
+  awbNumber      String  @unique @map("awb_number")
+  trackingNumber String  @unique @map("tracking_number")
+  orderNumber    String? @map("order_number")
+
+  // Shipper
+  senderName    String  @map("sender_name")
+  senderAddress String  @map("sender_address")
+  senderCompany String? @map("sender_company")
+  senderPhone   String? @map("sender_phone")
+  senderCity    String? @map("sender_city")
+  senderCountry String? @map("sender_country")
+
+  // Receiver
+  receiverName    String  @map("receiver_name")
+  receiverAddress String  @map("receiver_address")
+  receiverCompany String? @map("receiver_company")
+  receiverPhone   String? @map("receiver_phone")
+  receiverCity    String? @map("receiver_city")
+  receiverCountry String? @map("receiver_country")
+
+  // Cargo totals
+  description      String?
+  freight          Float   @default(0)
+  freightRate      Float   @default(0) @map("freight_rate")
+  insurance        Float   @default(0)
+  awbPieces        Int     @default(0) @map("awb_pieces")
+  awbWeight        Float   @default(0) @map("awb_weight")
+  chargeableWeight Float   @default(0) @map("chargeable_weight")
+  volumeWeight     Float   @default(0) @map("volume_weight")
+  length           Float   @default(0)
+  width            Float   @default(0)
+  height           Float   @default(0)
+  volume           Float   @default(0)
+
+  // Commercial
+  currency     String       @default("USD")
+  customsValue Float        @default(0) @map("customs_value")
+  paymentMode  PaymentMode  @map("payment_mode")
+  shipmentType ShipmentType @map("shipment_type")
+
+  // Dates
+  receivedAt          DateTime? @map("received_at")
+  expectedArrivalDate DateTime? @map("expected_arrival_date")
+
+  // Workflow (enterprise state machines — NO booleans)
+  cargoStatus     CargoStatus     @default(INITIATED) @map("cargo_status")
+  warehouseStatus WarehouseStatus @default(RECEIVED) @map("warehouse_status")
+  billingStatus   BillingStatus   @default(NOT_BILLED) @map("billing_status")
+
+  // Routing
+  originStationId      String    @map("origin_station_id") @db.Uuid
+  destinationStationId String    @map("destination_station_id") @db.Uuid
+  currentStationId     String?   @map("current_station_id") @db.Uuid
+  originStation        Station  @relation("OriginStation", fields: [originStationId], references: [id])
+  destinationStation   Station  @relation("DestinationStation", fields: [destinationStationId], references: [id])
+  currentStation       Station? @relation("CurrentStation", fields: [currentStationId], references: [id])
+
+  // Airline & Flight
+  airlineId     String   @map("airline_id") @db.Uuid
+  flightNumber  String   @map("flight_number")
+  departureTime DateTime @map("departure_time")
+  arrivalTime   DateTime @map("arrival_time")
+
+  // Manifest
+  manifestId     String? @map("manifest_id") @db.Uuid
+  manifestNumber String? @map("manifest_number")
+
+  // Customs
+  customsDeclarationId String?       @map("customs_declaration_id") @db.Uuid
+  customsStatus        CustomsStatus @default(DECLARED) @map("customs_status")
+
+  // Billing
+  masterAWBBillingId String? @map("master_awb_billing_id") @db.Uuid
+
+  // Relations
+  houseAWBs HouseAWB[]
+
+  // Timestamps
+  createdAt      DateTime  @default(now()) @map("created_at")
+  consolidatedAt DateTime? @map("consolidated_at")
+  manifestedAt   DateTime? @map("manifested_at")
+  departedAt     DateTime? @map("departed_at")
+  arrivedAt      DateTime? @map("arrived_at")
+  closedAt       DateTime? @map("closed_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  @@index([organizationId])
+  @@index([trackingNumber])
+  @@index([awbNumber])
+  @@index([flightNumber])
+  @@index([cargoStatus])
+  @@index([organizationId, cargoStatus])
+  @@map("master_awbs")
+}
+
+model HouseAWB {
+  id             String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId String  @map("organization_id") @db.Uuid
+  masterAWBId    String? @map("master_awb_id") @db.Uuid
+
+  // Identifiers
+  houseAWBNumber String  @unique @map("house_awb_number")
+  trackingNumber String  @unique @map("tracking_number")
+  orderNumber    String? @map("order_number")
+
+  // Shipper (customer)
+  shipperId String   @map("shipper_id") @db.Uuid
+  shipper   Customer @relation("Shipper", fields: [shipperId], references: [id])
+
+  // Receiver (customer)
+  receiverId String   @map("receiver_id") @db.Uuid
+  receiver   Customer @relation("Receiver", fields: [receiverId], references: [id])
+
+  // Cargo details
+  description      String?
+  pieces           Int     @default(0)
+  weight           Float   @default(0)
+  volume           Float   @default(0)
+  chargeableWeight Float   @default(0) @map("chargeable_weight")
+  volumeWeight     Float   @default(0) @map("volume_weight")
+  length           Float   @default(0)
+  width            Float   @default(0)
+  height           Float   @default(0)
+
+  // Commercial
+  freight      Float        @default(0)
+  freightRate  Float        @default(0) @map("freight_rate")
+  insurance    Float        @default(0)
+  currency     String       @default("USD")
+  customsValue Float        @default(0) @map("customs_value")
+  paymentMode  PaymentMode  @map("payment_mode")
+  shipmentType ShipmentType @map("shipment_type")
+
+  // Customs
+  hsCode             String @map("hs_code")
+  originCountry      String @map("origin_country")
+  destinationCountry String @map("destination_country")
+
+  // Workflow
+  cargoStatus     CargoStatus     @default(INITIATED) @map("cargo_status")
+  warehouseStatus WarehouseStatus @default(RECEIVED) @map("warehouse_status")
+  billingStatus   BillingStatus   @default(NOT_BILLED) @map("billing_status")
+
+  // Dates
+  receivedAt          DateTime? @map("received_at")
+  expectedArrivalDate DateTime? @map("expected_arrival_date")
+
+  // Relations
+  masterAWB MasterAWB? @relation(fields: [masterAWBId], references: [id])
+  parcels   Parcel[]
+
+  // Billing & customs
+  houseAWBBillingId    String? @map("house_awb_billing_id") @db.Uuid
+  customsDeclarationId String? @map("customs_declaration_id") @db.Uuid
+
+  // Timestamps
+  createdAt      DateTime  @default(now()) @map("created_at")
+  pickedUpAt     DateTime? @map("picked_up_at")
+  consolidatedAt DateTime? @map("consolidated_at")
+  deliveredAt    DateTime? @map("delivered_at")
+  signedAt       DateTime? @map("signed_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  @@index([organizationId])
+  @@index([masterAWBId])
+  @@index([cargoStatus])
+  @@index([trackingNumber])
+  @@index([organizationId, cargoStatus])
+  @@map("house_awbs")
+}
+
+model Parcel {
+  id         String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  houseAWBId String @map("house_awb_id") @db.Uuid
+
+  // Identifiers
+  parcelTrackingNumber String  @unique @map("parcel_tracking_number")
+  barcode              String  @unique
+  qrCode               String? @map("qr_code")
+  serialNumber         String? @map("serial_number")
+
+  // Cargo details
+  description      String
+  quantity         Int    @default(1)
+  actualWeight     Float  @default(0) @map("actual_weight")
+  volumetricWeight Float  @default(0) @map("volumetric_weight")
+  length           Float  @default(0)
+  width            Float  @default(0)
+  height           Float  @default(0)
+  volume           Float  @default(0)
+  value            Float  @default(0)
+  hsCode           String @map("hs_code")
+  packageType      String @map("package_type")
+  condition        String @default("GOOD")
+
+  // Warehouse location
+  warehouseLocationId String?            @map("warehouse_location_id") @db.Uuid
+  warehouseLocation   WarehouseLocation? @relation(fields: [warehouseLocationId], references: [id])
+
+  // Relations
+  houseAWB HouseAWB @relation(fields: [houseAWBId], references: [id])
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([houseAWBId])
+  @@index([barcode])
+  @@index([parcelTrackingNumber])
+  @@map("parcels")
+}
+
+// ============================================
+// WAREHOUSE LOCATION SYSTEM
+// ============================================
+
+model WarehouseLocation {
+  id        String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  warehouse String
+  zone      String
+  rack      String
+  shelf     String
+  bay       String
+  bin       String
+  floor     String
+
+  // Tracking
+  assignedAt DateTime? @map("assigned_at")
+  movedAt    DateTime? @map("moved_at")
+  releasedAt DateTime? @map("released_at")
+
+  // Relations
+  parcels Parcel[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([warehouse, zone, rack, shelf, bay, bin, floor])
+  @@index([warehouse, zone])
+  @@map("warehouse_locations")
+}
+
+// ============================================
+// WAREHOUSE ZONES (existing)
+// ============================================
+
+model WarehouseZone {
+  id        String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  stationId String  @map("station_id") @db.Uuid
+  code      String
+  name      String
+  type      String
+  capacity  Int     @default(0)
+  isActive  Boolean @default(true) @map("is_active")
+
+  station   Station           @relation(fields: [stationId], references: [id])
+  locations StorageLocation[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([stationId, code])
+  @@map("warehouse_zones")
+}
+
+model StorageLocation {
+  id        String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  zoneId    String  @map("zone_id") @db.Uuid
+  code      String
+  barcode   String  @unique
+  maxWeight Float   @default(0) @map("max_weight")
+  isActive  Boolean @default(true) @map("is_active")
+
+  zone      WarehouseZone        @relation(fields: [zoneId], references: [id])
+  inventory WarehouseInventory[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([zoneId, code])
+  @@index([zoneId])
+  @@map("storage_locations")
+}
+
+model WarehouseInventory {
+  id                String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId    String          @map("organization_id") @db.Uuid
+  stationId         String          @map("station_id") @db.Uuid
+  storageLocationId String?         @map("storage_location_id") @db.Uuid
+  houseAWBId        String?         @map("house_awb_id") @db.Uuid
+  masterAWBId       String?         @map("master_awb_id") @db.Uuid
+  status            WarehouseStatus @default(RECEIVED)
+  quantity          Int             @default(1)
+  weight            Float           @default(0)
+  volume            Float           @default(0)
+  receivedAt        DateTime        @default(now()) @map("received_at")
+  storedAt          DateTime?       @map("stored_at")
+  dispatchedAt      DateTime?       @map("dispatched_at")
+
+  station         Station          @relation(fields: [stationId], references: [id])
+  storageLocation StorageLocation? @relation(fields: [storageLocationId], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([organizationId])
+  @@index([stationId])
+  @@index([storageLocationId])
+  @@index([status])
+  @@map("warehouse_inventory")
+}
+
+// ============================================
+// TRACKING & EVENTS
+// ============================================
+
+model TrackingEvent {
+  id                String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId    String      @map("organization_id") @db.Uuid
+  entityType        String      @map("entity_type") // MasterAWB | HouseAWB | Parcel
+  entityId          String      @map("entity_id") @db.Uuid
+  eventType         String      @map("event_type")
+  status            CargoStatus
+  title             String
+  description       String?
+  userId            String      @map("user_id") @db.Uuid
+  stationId         String?     @map("station_id")
+  scanSource        String?     @map("scan_source") // BARCODE, QR, MANUAL, WAREHOUSE, FLIGHT, CUSTOMS, DELIVERY
+  remarks           String?
+  latitude          Float?      @map("latitude")
+  longitude         Float?      @map("longitude")
+  address           String?
+  metadata          Json?
+  visibleToCustomer Boolean     @default(true) @map("visible_to_customer")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([entityId, createdAt])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("tracking_events")
+}
+
+// ============================================
+// DELIVERY
+// ============================================
+
+model Rider {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId      String  @unique @map("user_id") @db.Uuid
+  vehicleType String  @default("BIKE")
+  vehicleReg  String? @map("vehicle_reg")
+  phone       String?
+  isActive    Boolean @default(true) @map("is_active")
+
+  user        User                 @relation(fields: [userId], references: [id])
+  assignments DeliveryAssignment[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("riders")
+}
+
+model DeliveryAssignment {
+  id              String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  houseAWBId      String?   @map("house_awb_id") @db.Uuid
+  masterAWBId     String?   @map("master_awb_id") @db.Uuid
+  riderId         String    @map("rider_id") @db.Uuid
+  status          String    @default("ASSIGNED")
+  pickupAddress   String?   @map("pickup_address")
+  deliveryAddress String?   @map("delivery_address")
+  recipientName   String?   @map("recipient_name")
+  recipientPhone  String?   @map("recipient_phone")
+  notes           String?
+  assignedAt      DateTime  @default(now()) @map("assigned_at")
+  pickedUpAt      DateTime? @map("picked_up_at")
+  deliveredAt     DateTime? @map("delivered_at")
+  failedAt        DateTime? @map("failed_at")
+  failureReason   String?   @map("failure_reason")
+
+  rider Rider @relation(fields: [riderId], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([organizationId])
+  @@index([riderId])
+  @@index([status])
+  @@map("delivery_assignments")
+}
+
+// ============================================
+// EXCHANGE RATES
+// ============================================
+
+model ExchangeRateSnapshot {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  baseCurrency String   @default("USD") @map("base_currency")
+  rates        Json
+  source       String?
+  validAt      DateTime @default(now()) @map("valid_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([validAt])
+  @@map("exchange_rate_snapshots")
+}
+
+// ============================================
+// EVENT STORE (Event Sourcing)
+// ============================================
+
+model DomainEvent {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  aggregateId   String   @map("aggregate_id") @db.Uuid
+  aggregateType String   @map("aggregate_type")
+  eventType     String   @map("event_type")
+  version       Int      @default(1)
+  data          Json
+  metadata      Json?
+  userId        String?  @map("user_id") @db.Uuid
+  occurredAt    DateTime @default(now()) @map("occurred_at")
+
+  @@index([aggregateId, aggregateType])
+  @@index([aggregateType, eventType])
+  @@index([occurredAt])
+  @@index([eventType])
+  @@map("domain_events")
+}
+
+// ============================================
+// AUDIT LOGGING
+// ============================================
+
+model AuditLog {
+  id        String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId    String  @map("user_id") @db.Uuid
+  action    String
+  entity    String
+  entityId  String? @map("entity_id") @db.Uuid
+  metadata  Json?
+  ipAddress String? @map("ip_address")
+  userAgent String? @map("user_agent")
+
+  user User @relation("CreatedBy", fields: [userId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================
+// CARGO DOMAIN — EXISTING (kept for compatibility)
+// ============================================
+
+model Flight {
+  id                   String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId       String   @map("organization_id") @db.Uuid
+  airlineId            String   @map("airline_id") @db.Uuid
+  flightNumber         String   @map("flight_number")
+  aircraftType         String?  @map("aircraft_type")
+  originStationId      String   @map("origin_station_id")
+  destinationStationId String   @map("destination_station_id")
+  departureTime        DateTime @map("departure_time")
+  arrivalTime          DateTime @map("arrival_time")
+  totalCapacity        Float    @default(0) @map("total_capacity")
+  availableCapacity    Float    @default(0) @map("available_capacity")
+  status               String   @default("SCHEDULED")
+
+  manifests Manifest[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([organizationId])
+  @@index([flightNumber])
+  @@index([status])
+  @@map("flights")
+}
+
+model Airline {
+  id             String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  name           String
+  iataCode       String @unique @map("iata_code")
+  icaoCode       String @unique @map("icao_code")
+  status         String @default("ACTIVE")
+  standardRate   Float  @default(0) @map("standard_rate")
+  premiumRate    Float  @default(0) @map("premium_rate")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([organizationId])
+  @@index([iataCode])
+  @@map("airlines")
+}
+
+model Manifest {
+  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  flightId       String       @map("flight_id") @db.Uuid
+  manifestNumber String       @unique @map("manifest_number")
+  manifestType   ManifestType @map("manifest_type")
+  status         String       @default("CREATED")
+
+  totalWeight  Float    @default(0) @map("total_weight")
+  totalVolume  Float    @default(0) @map("total_volume")
+  totalPieces  Int      @default(0) @map("total_pieces")
+  masterAWBIds String[] @map("master_awb_ids")
+
+  submittedAt        DateTime? @map("submitted_at")
+  submittedBy        String?   @map("submitted_by")
+  airlineConfirmedAt DateTime? @map("airline_confirmed_at")
+  airlineConfirmedBy String?   @map("airline_confirmed_by")
+  departedAt         DateTime? @map("departed_at")
+  arrivedAt          DateTime? @map("arrived_at")
+  customsSubmittedAt DateTime? @map("customs_submitted_at")
+  customsApprovedAt  DateTime? @map("customs_approved_at")
+
+  flight Flight @relation(fields: [flightId], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  closedAt  DateTime? @map("closed_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([organizationId])
+  @@index([manifestNumber])
+  @@index([flightId])
+  @@index([status])
+  @@map("manifests")
+}
+
+model ShipmentTimeline {
+  id            String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  aggregateId   String  @map("aggregate_id") @db.Uuid
+  aggregateType String  @map("aggregate_type")
+  eventType     String  @map("event_type")
+  title         String
+  description   String?
+  userId        String  @map("user_id") @db.Uuid
+  stationId     String? @map("station_id")
+  visibility    String  @default("INTERNAL")
+  metadata      Json?
+  latitude      Float?  @map("latitude")
+  longitude     Float?  @map("longitude")
+  address       String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([aggregateId, aggregateType])
+  @@index([aggregateId, visibility])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("shipment_timeline")
+}
+
+model ShipmentScan {
+  id             String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId String  @map("organization_id") @db.Uuid
+  eventType      String  @map("event_type")
+  barcode        String
+  houseAWBId     String? @map("house_awb_id") @db.Uuid
+  masterAWBId    String? @map("master_awb_id") @db.Uuid
+  userId         String  @map("user_id") @db.Uuid
+  stationId      String? @map("station_id")
+  latitude       Float?  @map("latitude")
+  longitude      Float?  @map("longitude")
+  address        String?
+  success        Boolean @default(true)
+  errorMessage   String? @map("error_message")
+  metadata       Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([barcode])
+  @@index([houseAWBId])
+  @@index([masterAWBId])
+  @@index([organizationId, createdAt])
+  @@index([eventType, createdAt])
+  @@map("shipment_scans")
+}
+
+model CustomsDeclaration {
+  id                String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId    String        @map("organization_id") @db.Uuid
+  houseAWBId        String?       @map("house_awb_id") @db.Uuid
+  masterAWBId       String?       @map("master_awb_id") @db.Uuid
+  declarationNumber String        @unique @map("declaration_number")
+  declarationType   String        @map("declaration_type")
+  status            CustomsStatus @default(DECLARED)
+
+  totalDeclaredValue  Float  @default(0) @map("total_declared_value")
+  totalDeclaredWeight Float  @default(0) @map("total_declared_weight")
+  hsCode              String @map("hs_code")
+  originCountry       String @map("origin_country")
+  destinationCountry  String @map("destination_country")
+
+  customsItems CustomsItem[]
+
+  submittedAt DateTime  @default(now()) @map("submitted_at")
+  submittedBy String    @map("submitted_by") @db.Uuid
+  clearedAt   DateTime? @map("cleared_at")
+  clearedBy   String?   @map("cleared_by") @db.Uuid
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([organizationId])
+  @@index([declarationNumber])
+  @@index([status])
+  @@index([houseAWBId])
+  @@map("customs_declarations")
+}
+
+model CustomsItem {
+  id            String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  declarationId String @map("declaration_id") @db.Uuid
+  description   String
+  quantity      Int
+  weight        Float
+  value         Float
+  hsCode        String @map("hs_code")
+
+  declaration CustomsDeclaration @relation(fields: [declarationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([declarationId])
+  @@map("customs_items")
+}
+
+// ============================================
+// BILLING
+// ============================================
+
+model BillingRecord {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organizationId  String        @map("organization_id") @db.Uuid
+  customerId      String?       @map("customer_id") @db.Uuid
+  houseAWBId      String?       @map("house_awb_id") @db.Uuid
+  masterAWBId     String?       @map("master_awb_id") @db.Uuid
+  status          BillingStatus @default(NOT_BILLED)
+  totalAmount     Float         @default(0) @map("total_amount")
+  currency        String        @default("USD")
+  paidAmount      Float         @default(0) @map("paid_amount")
+  remainingAmount Float         @default(0) @map("remaining_amount")
+
+  customer       Customer?       @relation(fields: [customerId], references: [id])
+  billingCharges BillingCharge[]
+  payments       Payment[]
+
+  invoicedAt     DateTime? @map("invoiced_at")
+  firstPaymentAt DateTime? @map("first_payment_at")
+  lastPaymentAt  DateTime? @map("last_payment_at")
+  fullyPaidAt    DateTime? @map("fully_paid_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([organizationId])
+  @@index([houseAWBId])
+  @@index([status])
+  @@map("billing_records")
+}
+
+model BillingCharge {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  billingRecordId String   @map("billing_record_id") @db.Uuid
+  type            String
+  amount          Float
+  currency        String   @default("USD")
+  description     String
+  appliedAt       DateTime @default(now()) @map("applied_at")
+
+  billingRecord BillingRecord @relation(fields: [billingRecordId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([billingRecordId])
+  @@map("billing_charges")
+}
+
+model Payment {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  billingRecordId String   @map("billing_record_id") @db.Uuid
+  amount          Float
+  currency        String   @default("USD")
+  paymentMethod   String   @map("payment_method")
+  paymentDate     DateTime @default(now()) @map("payment_date")
+  reference       String
+  exchangeRate    Float    @default(1.0) @map("exchange_rate")
+  notes           String?
+
+  billingRecord BillingRecord @relation(fields: [billingRecordId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([billingRecordId])
+  @@map("payments")
+}
