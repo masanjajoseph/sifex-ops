@@ -14,6 +14,8 @@ export interface AuthUser {
   branchIds?: string[];
   departmentId: string | null;
   stations: string[];
+  passwordResetRequired: boolean;
+  status: string;
   recentlyUsed?: string[];
   favorites?: string[];
 }

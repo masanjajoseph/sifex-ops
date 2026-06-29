@@ -19,6 +19,8 @@ export function createMockSession(overrides: Partial<AuthUser> = {}): Session {
     branchId: 'test-branch-id',
     departmentId: 'test-dept-id',
     stations: ['test-station-id'],
+    passwordResetRequired: false,
+    status: 'ACTIVE',
   };
 
   return {

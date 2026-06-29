@@ -10,6 +10,8 @@ declare module "next-auth" {
     branchIds?: string[];
     departmentId: string | null;
     stations: string[];
+    passwordResetRequired: boolean;
+    status: string;
     recentlyUsed?: string[];
     favorites?: string[];
   }
@@ -26,6 +28,8 @@ declare module "next-auth" {
       branchIds?: string[];
       departmentId: string | null;
       stations: string[];
+      passwordResetRequired: boolean;
+      status: string;
       recentlyUsed?: string[];
       favorites?: string[];
     };
@@ -41,6 +45,8 @@ declare module "next-auth/jwt" {
     branchIds?: string[];
     departmentId: string | null;
     stations: string[];
+    passwordResetRequired: boolean;
+    status: string;
     recentlyUsed?: string[];
     favorites?: string[];
   }

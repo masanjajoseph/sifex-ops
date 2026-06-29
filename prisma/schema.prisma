@@ -23,6 +23,20 @@ enum WorkflowStage {
   COMPLETED
 }
 
+enum UserStatus {
+  PENDING
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
 enum CargoStatus {
   INITIATED
   ACCEPTED
@@ -122,16 +136,22 @@ enum CustomsStatus {
 // ============================================
 
 model User {
-  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  email         String    @unique
+  id            String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email         String     @unique
+  username      String?    @unique
   password      String
-  firstName     String    @map("first_name")
-  lastName      String    @map("last_name")
+  firstName     String     @map("first_name")
+  lastName      String     @map("last_name")
   phone         String?
   avatar        String?
-  isActive      Boolean   @default(true) @map("is_active")
-  emailVerified DateTime? @map("email_verified")
-  lastLoginAt   DateTime? @map("last_login_at")
+  status        UserStatus @default(PENDING) @map("status")
+  emailVerified DateTime?  @map("email_verified")
+  lastLoginAt   DateTime?  @map("last_login_at")
+  firstLoginAt  DateTime?  @map("first_login_at")
+  passwordResetRequired Boolean @default(false) @map("password_reset_required")
+  invitedAt     DateTime?  @map("invited_at")
+  invitationToken  String? @map("invitation_token")
+  invitationExpiresAt DateTime? @map("invitation_expires_at")
 
 
   departmentId String?     @map("department_id") @db.Uuid
@@ -156,11 +176,46 @@ model User {
   passwordResetToken  String?   @map("password_reset_token")
   passwordResetExpiry DateTime? @map("password_reset_expiry")
 
+  invitations Invitation[] @relation("SentInvitations")
+  cancelledInvitations Invitation[] @relation("InvitationCancelledBy")
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
+  @@index([status])
+  @@index([deletedAt, status])
   @@map("users")
+}
+
+// ============================================
+// INVITATION SYSTEM
+// ============================================
+
+model Invitation {
+  id                String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId            String           @map("user_id") @db.Uuid
+  email             String
+  token             String           @unique
+  temporaryPassword String           @map("temporary_password")
+  status            InvitationStatus @default(PENDING)
+  expiresAt         DateTime         @map("expires_at")
+  sentAt            DateTime?        @map("sent_at")
+  acceptedAt        DateTime?        @map("accepted_at")
+  cancelledAt       DateTime?        @map("cancelled_at")
+  cancelledById     String?          @map("cancelled_by_id") @db.Uuid
+
+  user      User  @relation("SentInvitations", fields: [userId], references: [id])
+  cancelledBy User? @relation("InvitationCancelledBy", fields: [cancelledById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([token])
+  @@index([status])
+  @@index([email])
+  @@map("invitations")
 }
 
 model Role {

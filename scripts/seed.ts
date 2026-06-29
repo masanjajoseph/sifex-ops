@@ -96,6 +96,8 @@ const generateCrud = (module: string, label: string): PermDef[] => [
 
 const SYSTEM_PERMISSIONS: PermDef[] = [
   ...generateCrud("users", "Users"),
+  { code: "users.invite", name: "Invite Users", module: PermissionModule.USERS, description: "Can invite users via email" },
+  { code: "users.reset_password", name: "Reset User Password", module: PermissionModule.USERS, description: "Can reset user passwords" },
   ...generateCrud("roles", "Roles"),
   ...generateCrud("export", "Export Shipments"),
   { code: "export.approve", name: "Approve Export", module: PermissionModule.EXPORT, description: "Can approve export shipments" },
@@ -171,6 +173,7 @@ const ROLE_PERMISSIONS: RolePermMap[] = [
     roleCode: "ADMIN",
     permissionCodes: [
       ...generateCrud("users", "Users").map((p) => p.code),
+      "users.invite", "users.reset_password",
       ...generateCrud("roles", "Roles").map((p) => p.code),
       ...generateCrud("billing", "Billing").map((p) => p.code),
       "billing.approve", "billing.payment",
@@ -425,7 +428,7 @@ async function ensureSuperUser(roleId: string) {
       password: hashed,
       firstName,
       lastName,
-      isActive: true,
+      status: "ACTIVE",
       emailVerified: new Date(),
       userRoles: { create: { roleId } },
     },

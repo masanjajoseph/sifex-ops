@@ -1,5 +1,44 @@
 import { z } from "zod";
 
+export enum UserStatus {
+  PENDING = "PENDING",
+  ACTIVE = "ACTIVE",
+  INVITED = "INVITED",
+  DISABLED = "DISABLED",
+}
+
+export enum InvitationStatus {
+  PENDING = "PENDING",
+  ACCEPTED = "ACCEPTED",
+  EXPIRED = "EXPIRED",
+  CANCELLED = "CANCELLED",
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  username?: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  avatar?: string;
+  status: UserStatus;
+  departmentId?: string;
+  department?: { id: string; name: string };
+  positionId?: string;
+  position?: { id: string; name: string };
+  branchId?: string;
+  branch?: { id: string; name: string };
+  roles: { id: string; code: string; name: string }[];
+  permissions: string[];
+  stations: string[];
+  passwordResetRequired: boolean;
+  firstLoginAt?: string;
+  invitedAt?: string;
+  lastLoginAt?: string;
+  createdAt: string;
+}
+
 export enum WorkflowStage {
   EXPORT = "EXPORT",
   IMPORT = "IMPORT",

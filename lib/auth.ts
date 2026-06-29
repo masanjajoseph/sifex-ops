@@ -62,7 +62,7 @@ const { handlers: nextHandlers, signIn, signOut } = NextAuth({
           },
         });
 
-        if (!user || !user.isActive || user.deletedAt) return null;
+        if (!user || user.status === "DISABLED" || user.deletedAt) return null;
 
         const isValid = await compare(password, user.password);
         if (!isValid) return null;
@@ -87,6 +87,8 @@ const { handlers: nextHandlers, signIn, signOut } = NextAuth({
           branchId: user.branchId,
           departmentId: user.departmentId,
           stations,
+          passwordResetRequired: user.passwordResetRequired,
+          status: user.status,
         };
       },
     }),
@@ -100,6 +102,8 @@ const { handlers: nextHandlers, signIn, signOut } = NextAuth({
         token.branchId = user.branchId;
         token.departmentId = user.departmentId;
         token.stations = user.stations;
+        token.passwordResetRequired = user.passwordResetRequired;
+        token.status = user.status;
       }
       return token;
     },
@@ -111,6 +115,8 @@ const { handlers: nextHandlers, signIn, signOut } = NextAuth({
         session.user.branchId = token.branchId as string | null;
         session.user.departmentId = token.departmentId as string | null;
         session.user.stations = token.stations as string[];
+        session.user.passwordResetRequired = token.passwordResetRequired as boolean;
+        session.user.status = token.status as string;
       }
       return session;
     },
@@ -147,6 +153,8 @@ export async function auth() {
         branchId: token.branchId as string | null,
         departmentId: token.departmentId as string | null,
         stations: token.stations as string[],
+        passwordResetRequired: token.passwordResetRequired as boolean,
+        status: token.status as string,
       },
       expires: new Date(
         Date.now() + 8 * 60 * 60 * 1000
