@@ -171,4 +171,35 @@ export function registerCargoEventHandlers(): void {
       metadata: event.payload as Record<string, unknown>,
     });
   });
+
+  // Handle workflow stage changes
+  eventBus.subscribe("workflow.stage_changed", async (event: DomainEvent) => {
+    const { entityType, entityId, oldStage, newStage, cargoStatus } = event.payload as Record<string, unknown>;
+
+    await shipmentTimelineService.addEvent({
+      aggregateId: entityId as string,
+      aggregateType: entityType as "MasterAWB" | "HouseAWB",
+      eventType: CargoEventType.EXPORT_CREATED,
+      userId: event.userId ?? "system",
+      metadata: {
+        field: "workflowStage",
+        oldValue: oldStage,
+        newValue: newStage,
+        triggeredBy: `cargoStatus: ${cargoStatus}`,
+      },
+    });
+
+    await createAuditLog({
+      userId: event.userId ?? "system",
+      action: "UPDATE",
+      entity: entityType as string,
+      entityId: entityId as string,
+      metadata: {
+        field: "workflowStage",
+        oldValue: oldStage,
+        newValue: newStage,
+        triggeredBy: `cargoStatus: ${cargoStatus}`,
+      },
+    });
+  });
 }

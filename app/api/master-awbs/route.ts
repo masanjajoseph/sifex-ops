@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { apiSuccess, apiError, withErrorHandler } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
-import { ShipmentType, PaymentMode, CargoStatus } from "@/types/cargo-domain";
+import { ShipmentType, PaymentMode, CargoStatus, WorkflowStage } from "@/types/cargo-domain";
 
 export const dynamic = "force-dynamic";
 
@@ -25,11 +25,13 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   };
   if (status) where.cargoStatus = status;
   if (scope === "export") {
-    where.cargoStatus = { in: ["INITIATED", "ACCEPTED", "RCS", "MANIFESTED", "LOADED", "DEPARTED"] };
+    where.workflowStage = WorkflowStage.EXPORT;
   } else if (scope === "import") {
-    where.cargoStatus = { in: ["IN_TRANSIT", "ARRIVED", "UNDER_CLEARANCE", "CUSTOMS_HOLD", "CUSTOMS_QUERY"] };
+    where.workflowStage = WorkflowStage.IMPORT;
   } else if (scope === "warehouse") {
-    where.cargoStatus = { in: ["RELEASED", "AWAITING_DELIVERY", "OUT_FOR_DELIVERY", "PICKED_UP", "DELIVERED", "POD_SIGNED"] };
+    where.workflowStage = WorkflowStage.WAREHOUSE;
+  } else if (scope === "delivery") {
+    where.workflowStage = WorkflowStage.DELIVERY;
   }
   if (search) {
     where.OR = [

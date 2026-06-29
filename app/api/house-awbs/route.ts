@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { apiSuccess, apiError, withErrorHandler } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
-import { ShipmentType, PaymentMode, CargoStatus } from "@/types/cargo-domain";
+import { ShipmentType, PaymentMode, CargoStatus, WorkflowStage } from "@/types/cargo-domain";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +20,8 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const masterAWBId = searchParams.get("masterAWBId") || undefined;
   const search = searchParams.get("search") || undefined;
 
+  const scope = searchParams.get("scope") || undefined;
+
   const where: Record<string, unknown> = {
     
     deletedAt: null,
@@ -28,6 +30,15 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   else if (notStatus) {
     const excluded = notStatus.split(',').map(s => s.trim());
     where.cargoStatus = { notIn: excluded };
+  }
+  if (scope === "export") {
+    where.workflowStage = WorkflowStage.EXPORT;
+  } else if (scope === "import") {
+    where.workflowStage = WorkflowStage.IMPORT;
+  } else if (scope === "warehouse") {
+    where.workflowStage = WorkflowStage.WAREHOUSE;
+  } else if (scope === "delivery") {
+    where.workflowStage = WorkflowStage.DELIVERY;
   }
   if (masterAWBId) where.masterAWBId = masterAWBId;
   if (search) {

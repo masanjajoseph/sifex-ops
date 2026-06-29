@@ -17,6 +17,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const limit = parseInt(searchParams.get("limit") || "10");
   const status = searchParams.get("status") || undefined;
   const riderId = searchParams.get("riderId") || undefined;
+  const includeUnassigned = searchParams.get("includeUnassigned") === "true";
 
   const where: Record<string, unknown> = {
     
@@ -25,7 +26,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   if (status) where.status = status;
   if (riderId) where.riderId = riderId;
 
-  const [items, total] = await Promise.all([
+  const [items, total, unassignedShipments] = await Promise.all([
     prisma.deliveryAssignment.findMany({
       where: where as any,
       include: { rider: { include: { user: true } }, houseAWB: { select: { houseAWBNumber: true, trackingNumber: true, pieces: true, cargoStatus: true } } },
@@ -34,9 +35,26 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
       orderBy: { createdAt: "desc" },
     }),
     prisma.deliveryAssignment.count({ where: where as any }),
+    includeUnassigned
+      ? prisma.houseAWB.findMany({
+          where: {
+            deletedAt: null,
+            cargoStatus: "AWAITING_DELIVERY",
+            deliveryAssignments: { none: { deletedAt: null } },
+          },
+          include: { shipper: { select: { name: true, phone: true } }, receiver: { select: { name: true, phone: true, address: true } } },
+          orderBy: { createdAt: "desc" },
+        })
+      : Promise.resolve([]),
   ]);
 
-  return apiSuccess(items, 200, { page, limit, total });
+  return apiSuccess(
+    includeUnassigned
+      ? { assigned: items, unassigned: unassignedShipments }
+      : items,
+    200,
+    { page, limit, total },
+  );
 });
 
 export const POST = withErrorHandler(async (req: NextRequest) => {

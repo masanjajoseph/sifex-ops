@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+export enum WorkflowStage {
+  EXPORT = "EXPORT",
+  IMPORT = "IMPORT",
+  WAREHOUSE = "WAREHOUSE",
+  DELIVERY = "DELIVERY",
+  COMPLETED = "COMPLETED",
+}
+
 export enum CargoStatus {
   INITIATED = "INITIATED",
   ACCEPTED = "ACCEPTED",

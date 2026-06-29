@@ -15,6 +15,14 @@ datasource db {
 // ENUMS
 // ============================================
 
+enum WorkflowStage {
+  EXPORT
+  IMPORT
+  WAREHOUSE
+  DELIVERY
+  COMPLETED
+}
+
 enum CargoStatus {
   INITIATED
   ACCEPTED
@@ -547,6 +555,7 @@ model MasterAWB {
 
   // Workflow (enterprise state machines — NO booleans)
   cargoStatus     CargoStatus     @default(INITIATED) @map("cargo_status")
+  workflowStage   WorkflowStage   @default(EXPORT) @map("workflow_stage")
   warehouseStatus WarehouseStatus @default(RECEIVED) @map("warehouse_status")
   billingStatus   BillingStatus   @default(NOT_BILLED) @map("billing_status")
 
@@ -596,7 +605,9 @@ model MasterAWB {
   @@index([awbNumber])
   @@index([flightNumber])
   @@index([cargoStatus])
+  @@index([workflowStage])
   @@index([deletedAt, cargoStatus])
+  @@index([deletedAt, workflowStage])
   @@index([deletedAt, createdAt])
   @@map("master_awbs")
 }
@@ -645,6 +656,7 @@ model HouseAWB {
 
   // Workflow
   cargoStatus     CargoStatus     @default(INITIATED) @map("cargo_status")
+  workflowStage   WorkflowStage   @default(EXPORT) @map("workflow_stage")
   warehouseStatus WarehouseStatus @default(RECEIVED) @map("warehouse_status")
   billingStatus   BillingStatus   @default(NOT_BILLED) @map("billing_status")
   paymentMethod   PaymentMethod?  @map("payment_method")
@@ -679,8 +691,10 @@ model HouseAWB {
 
   @@index([masterAWBId])
   @@index([cargoStatus])
+  @@index([workflowStage])
   @@index([trackingNumber])
   @@index([deletedAt, cargoStatus])
+  @@index([deletedAt, workflowStage])
   @@index([deletedAt, createdAt])
   @@map("house_awbs")
 }

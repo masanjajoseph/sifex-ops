@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { apiSuccess, apiError, withErrorHandler, NotFoundError } from "@/lib/errors";
 import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { syncWorkflowStage } from "@/features/cargo/workflows/workflow-stage.workflow";
+import { createAuditLog } from "@/services/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +38,10 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
   }
 
   const { id } = await params;
-  const existing = await prisma.deliveryAssignment.findUnique({ where: { id, deletedAt: null } });
+  const existing = await prisma.deliveryAssignment.findUnique({
+    where: { id, deletedAt: null },
+    include: { houseAWB: { select: { id: true } } },
+  });
 
   if (!existing) {
     return apiError(new NotFoundError("Delivery assignment"));
@@ -52,12 +57,83 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
       case "PICKED_UP":
         updateData.pickedUpAt = new Date();
         break;
-      case "DELIVERED":
+      case "DELIVERED": {
         updateData.deliveredAt = new Date();
+
+        await createAuditLog({
+          userId: session.user.id!,
+          action: "UPDATE",
+          entity: "DeliveryAssignment",
+          entityId: id,
+          metadata: {
+            field: "status",
+            oldValue: existing.status,
+            newValue: "DELIVERED",
+            riderId: existing.riderId,
+          },
+        });
+
+        if (existing.houseAWBId) {
+          await prisma.$transaction(async (tx) => {
+            await tx.houseAWB.update({
+              where: { id: existing.houseAWBId! },
+              data: {
+                cargoStatus: "DELIVERED",
+                deliveredAt: new Date(),
+                signedAt: body.signature ? new Date() : undefined,
+              },
+            });
+
+            await syncWorkflowStage("HouseAWB", existing.houseAWBId!, "DELIVERED" as any, session.user.id!);
+          });
+
+          const trackingData: any = {
+            entityType: "HouseAWB",
+            entityId: existing.houseAWBId,
+            eventType: "DELIVERED",
+            status: "DELIVERED",
+            title: "Shipment delivered successfully",
+            userId: session.user.id!,
+            createdAt: new Date(),
+          };
+
+          if (body.recipientName) trackingData.remarks = `Signed by: ${body.recipientName}`;
+
+          await prisma.trackingEvent.create({ data: trackingData });
+
+          if (body.signature) {
+            await prisma.deliveryNote.create({
+              data: {
+                houseAWBId: existing.houseAWBId,
+                deliveryType: "DELIVERY",
+                status: "SIGNED",
+                recipientName: body.recipientName || "Unknown",
+                recipientPhone: body.recipientPhone,
+                signature: body.signature,
+                signedAt: new Date(),
+                createdById: session.user.id!,
+              },
+            });
+          }
+        }
         break;
+      }
       case "FAILED":
         updateData.failedAt = new Date();
         updateData.failureReason = body.failureReason || "Unknown";
+
+        await createAuditLog({
+          userId: session.user.id!,
+          action: "UPDATE",
+          entity: "DeliveryAssignment",
+          entityId: id,
+          metadata: {
+            field: "status",
+            oldValue: existing.status,
+            newValue: "FAILED",
+            failureReason: body.failureReason,
+          },
+        });
         break;
     }
   }

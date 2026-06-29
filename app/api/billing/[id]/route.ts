@@ -4,6 +4,8 @@ import { apiSuccess, apiError, withErrorHandler, NotFoundError } from "@/lib/err
 import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { billingService } from "@/features/cargo/billing/billing.service";
+import { syncWorkflowStage } from "@/features/cargo/workflows/workflow-stage.workflow";
+import { createAuditLog } from "@/services/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -189,8 +191,21 @@ export const POST = withErrorHandler(async (req: NextRequest, { params }: { para
     data: updateData as any,
   });
 
-  // Cascade payment status to linked HAWB
-  if (existing.houseAWBId) {
+  // Cascade payment status to linked HAWB and auto-transition to WAITING_DELIVERY
+  if (existing.houseAWBId && newStatus === "PAID") {
+    await prisma.$transaction(async (tx) => {
+      await tx.houseAWB.update({
+        where: { id: existing.houseAWBId! },
+        data: {
+          billingStatus: newStatus as any,
+          paymentMethod: paymentMethod.toUpperCase() as any,
+          cargoStatus: "AWAITING_DELIVERY",
+        },
+      });
+
+      await syncWorkflowStage("HouseAWB", existing.houseAWBId!, "AWAITING_DELIVERY" as any, session.user.id!);
+    });
+  } else if (existing.houseAWBId) {
     await prisma.houseAWB.update({
       where: { id: existing.houseAWBId },
       data: {
@@ -209,6 +224,34 @@ export const POST = withErrorHandler(async (req: NextRequest, { params }: { para
       title: `Payment of ${paidAmount} ${existing.currency} recorded`,
       userId: session.user.id!,
       createdAt: new Date(),
+    },
+  });
+
+  if (existing.houseAWBId && newStatus === "PAID") {
+    await prisma.trackingEvent.create({
+      data: {
+        entityType: "HouseAWB",
+        entityId: existing.houseAWBId,
+        eventType: "AWAITING_DELIVERY",
+        status: "AWAITING_DELIVERY",
+        title: "Payment complete — awaiting delivery assignment",
+        userId: session.user.id!,
+        createdAt: new Date(),
+      },
+    });
+  }
+
+  await createAuditLog({
+    userId: session.user.id!,
+    action: "UPDATE",
+    entity: "BillingRecord",
+    entityId: id,
+    metadata: {
+      field: "status",
+      oldValue: existing.status,
+      newValue: newStatus,
+      paymentMethod,
+      houseAWBId: existing.houseAWBId,
     },
   });
 

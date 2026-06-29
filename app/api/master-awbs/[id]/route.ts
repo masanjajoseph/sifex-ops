@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { apiSuccess, apiError, withErrorHandler, NotFoundError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { CargoStatus } from "@/types/cargo-domain";
+import { syncWorkflowStageOnStatusChange } from "@/features/cargo/workflows/workflow-stage.workflow";
+import { createAuditLog } from "@/services/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -97,10 +99,14 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
 
   if (data.cargoStatus && existing.cargoStatus !== data.cargoStatus) {
     const newStatus = data.cargoStatus as CargoStatus;
+    const oldStatus = existing.cargoStatus;
+
     await prisma.houseAWB.updateMany({
       where: { masterAWBId: id, deletedAt: null },
       data: { cargoStatus: newStatus },
     });
+
+    await syncWorkflowStageOnStatusChange("MasterAWB", id, newStatus, session.user.id!);
 
     const hawbEvents = (existing as any).houseAWBs?.map((h: any) => ({
       entityType: "HouseAWB" as const,
@@ -126,6 +132,18 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
         ...hawbEvents,
       ],
     });
+
+    await createAuditLog({
+      userId: session.user.id!,
+      action: "UPDATE",
+      entity: "MasterAWB",
+      entityId: id,
+      metadata: {
+        field: "cargoStatus",
+        oldValue: oldStatus,
+        newValue: newStatus,
+      },
+    });
   }
 
   if (data.cargoStatus === 'RELEASED' && existing.cargoStatus !== 'RELEASED') {
@@ -144,7 +162,7 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
           houseAWBId: hawb.id,
           masterAWBId: id,
           customerId: hawb.shipperId,
-          status: 'DRAFT',
+          status: 'UNPAID',
           totalAmount: hawb.freight,
           currency: hawb.currency,
           billingCharges: {
@@ -157,10 +175,10 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
 
       await prisma.houseAWB.update({
         where: { id: hawb.id },
-        data: { billingStatus: 'DRAFT' as any },
+        data: { billingStatus: 'UNPAID' as any },
       });
     }
-    data.billingStatus = 'DRAFT';
+    data.billingStatus = 'UNPAID';
   }
 
   const updated = await prisma.masterAWB.update({
