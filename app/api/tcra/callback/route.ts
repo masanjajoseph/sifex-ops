@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
 
     const signature = request.headers.get("Authorization") ?? "";
     const sigValue = signature.replace(/^Signature\s*/i, "");
-    if (sigValue && !verifySignature(body, sigValue)) {
+    if (sigValue && !(await verifySignature(body, sigValue))) {
       return NextResponse.json(
         {
           msgInfo: { timestamp: new Date().toISOString(), msgId: "" },

@@ -36,8 +36,13 @@ function log(level: LogLevel, message: string, data?: unknown, context?: string)
     else if (level === "warn") console.warn(formatted);
     else console.log(formatted);
   } else {
-    // In production, output structured JSON for log aggregators
-    process.stdout.write(JSON.stringify(entry) + "\n");
+    const jsonLine = JSON.stringify(entry) + "\n";
+    // Edge-compatible: use console.log when process.stdout unavailable
+    if (typeof process !== "undefined" && process.stdout) {
+      process.stdout.write(jsonLine);
+    } else {
+      console.log(jsonLine);
+    }
   }
 }
 

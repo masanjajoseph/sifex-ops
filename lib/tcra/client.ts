@@ -14,7 +14,7 @@ export function createTcraClient(opts?: TcraClientOptions) {
     const payload = JSON.stringify(body);
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      Authorization: createAuthHeader(payload),
+      Authorization: await createAuthHeader(payload),
     };
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);

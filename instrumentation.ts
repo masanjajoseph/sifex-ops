@@ -1,6 +1,9 @@
 import { env } from "@/lib/env";
 
 export async function register() {
+  // Only run in Node.js runtime — Edge runtime cannot import Node modules
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+
   const [{ registerCargoEventHandlers }, { subscribeToEvents }] = await Promise.all([
     import("@/features/cargo/events/cargo-event-subscriber"),
     import("@/lib/tcra/events"),
