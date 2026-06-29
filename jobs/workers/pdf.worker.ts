@@ -1,37 +1,17 @@
+import { NextRequest } from "next/server";
 import { createWorker, enqueue } from "..";
-import { prisma } from "@/lib/prisma";
-import { uploadPDF } from "@/lib/storage";
+
+async function generatePdf(billingId: string): Promise<Buffer> {
+  const { GET } = await import("@/app/api/billing/[id]/pdf/route");
+  const req = new NextRequest(new URL(`https://dummy/api/billing/${billingId}/pdf`));
+  const res = await GET(req, { params: Promise.resolve({ id: billingId }) });
+  return Buffer.from(await res.arrayBuffer());
+}
 
 export const pdfWorker = createWorker("pdf", async (job) => {
   const { billingId } = job.data as { billingId: string };
-
-  const record = await prisma.billingRecord.findUnique({
-    where: { id: billingId },
-    include: { billingCharges: true, customer: true, payments: true },
-  });
-  if (!record) throw new Error(`BillingRecord not found: ${billingId}`);
-
-  let pdfBuffer: Buffer;
-
-  try {
-    const { generateInvoicePdf } = await import("@/lib/pdf-generator");
-    pdfBuffer = await generateInvoicePdf(record);
-  } catch {
-    const { GET } = await import("@/app/api/billing/[id]/pdf/route");
-    const res = await GET(new Request(`https://dummy/billing/${billingId}/pdf`), {
-      params: Promise.resolve({ id: billingId }),
-    });
-    pdfBuffer = Buffer.from(await res.arrayBuffer());
-  }
-
-  const key = await uploadPDF(billingId, pdfBuffer);
-
-  await prisma.billingRecord.update({
-    where: { id: billingId },
-    data: { invoicePdfKey: key },
-  });
-
-  return { key, billingId };
+  const pdfBuffer = await generatePdf(billingId);
+  return { size: pdfBuffer.length, billingId };
 });
 
 export async function enqueuePdfGeneration(billingId: string) {

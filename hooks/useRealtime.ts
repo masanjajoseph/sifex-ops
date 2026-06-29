@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import type { Types } from "ably";
+import type { InboundMessage, messageCallback } from "ably";
 import { getChannel } from "@/lib/realtime";
 
-type MessageCallback = (message: Types.Message) => void;
+type MessageCallback = (message: InboundMessage) => void;
 
 export function useRealtimeChannel(channelName: string, onMessage: MessageCallback) {
   const callbackRef = useRef(onMessage);
@@ -12,7 +12,7 @@ export function useRealtimeChannel(channelName: string, onMessage: MessageCallba
 
   useEffect(() => {
     const channel = getChannel(channelName);
-    const handler: Types.messageCallback<unknown> = (message) => {
+    const handler: messageCallback<InboundMessage> = (message) => {
       callbackRef.current(message);
     };
     channel.subscribe(handler);
@@ -26,7 +26,7 @@ export function useRealtimeEvent(
   callback: (data: unknown) => void,
 ) {
   const handler = useCallback(
-    (message: Types.Message) => {
+    (message: InboundMessage) => {
       if (message.name === event) callback(message.data);
     },
     [event, callback],

@@ -8,10 +8,14 @@ export const tcraWorker = createWorker("tcra", async (job) => {
     case "process-outbox":
       await processPendingEvents();
       break;
-    case "send-snapshot":
+    case "send-snapshot": {
       const { sendDailySnapshot } = await import("@/lib/tcra/snapshot");
-      await sendDailySnapshot();
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const endOfToday = new Date(startOfToday.getTime() + 86400000);
+      await sendDailySnapshot(startOfToday, endOfToday);
       break;
+    }
     default:
       throw new Error(`Unknown TCRA action: ${action}`);
   }

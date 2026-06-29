@@ -16,7 +16,7 @@ export async function publish(channel: string, event: string, data: unknown): Pr
   await ch.publish(event, data);
 }
 
-export function getChannel(channelName: string): Ably.Types.ChannelCallbacks {
+export function getChannel(channelName: string): Ably.RealtimeChannel {
   const client = getRealtime();
-  return client.channels.get(channelName) as unknown as Ably.Types.ChannelCallbacks;
+  return client.channels.get(channelName);
 }

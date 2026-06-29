@@ -6,7 +6,7 @@ export async function publishMasterAWBUpdate(id: string, data: unknown): Promise
   await publish(CHANNELS.DASHBOARD, EVENTS.UPDATED, { type: "master-awb", id });
 }
 
-export async function publishMasterAWBStatus(id: string, status: string, data: unknown): Promise<void> {
+export async function publishMasterAWBStatus(id: string, status: string, data: Record<string, unknown>): Promise<void> {
   await publish(CHANNELS.MASTER_AWB(id), EVENTS.STATUS_CHANGED, { status, ...data });
   await publish(CHANNELS.DASHBOARD, EVENTS.STATUS_CHANGED, { type: "master-awb", id, status });
 }
@@ -15,7 +15,7 @@ export async function publishHouseAWBUpdate(id: string, data: unknown): Promise<
   await publish(CHANNELS.HOUSE_AWB(id), EVENTS.UPDATED, data);
 }
 
-export async function publishHouseAWBStatus(id: string, status: string, data: unknown): Promise<void> {
+export async function publishHouseAWBStatus(id: string, status: string, data: Record<string, unknown>): Promise<void> {
   await publish(CHANNELS.HOUSE_AWB(id), EVENTS.STATUS_CHANGED, { status, ...data });
 }
 

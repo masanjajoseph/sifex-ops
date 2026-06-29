@@ -1,4 +1,4 @@
-import { cache } from "@/lib/cache";
+import { getOrSet, invalidatePattern } from "@/lib/cache";
 import { CACHE_TTL } from "@/lib/cache/keys";
 import { buildListCacheKey } from "@/lib/api-cache";
 
@@ -14,21 +14,9 @@ export async function getCachedList<T>(
   options: CachedListOptions = {},
 ): Promise<T> {
   const key = buildListCacheKey(resource, params);
-  return getOrSetCached(key, fetch, options.ttl || CACHE_TTL.SHORT);
-}
-
-async function getOrSetCached<T>(
-  key: string,
-  fetch: () => Promise<T>,
-  ttl: number,
-): Promise<T> {
-  const cached = await cache.get<T>(key);
-  if (cached !== null) return cached;
-  const value = await fetch();
-  await cache.setex(key, ttl, value);
-  return value;
+  return getOrSet(key, fetch, options.ttl || CACHE_TTL.SHORT);
 }
 
 export function invalidateListCache(resource: string): void {
-  cache.delByPattern(`api:list:${resource}:*`);
+  invalidatePattern(`api:list:${resource}:*`);
 }

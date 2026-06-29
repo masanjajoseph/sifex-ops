@@ -4,7 +4,7 @@ import { env } from "@/lib/env";
 
 const transporter = nodemailer.createTransport({
   host: env.SMTP_HOST || "smtp.mailtrap.io",
-  port: parseInt(env.SMTP_PORT || "587"),
+  port: env.SMTP_PORT ?? 587,
   auth: {
     user: env.SMTP_USER,
     pass: env.SMTP_PASS,
@@ -13,7 +13,7 @@ const transporter = nodemailer.createTransport({
 
 async function sendSms(phone: string, message: string): Promise<void> {
   if (env.SMS_PROVIDER === "twilio") {
-    const twilio = await import("twilio");
+    const { default: twilio } = await import("twilio");
     const client = twilio(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
     await client.messages.create({ body: message, to: phone, from: env.TWILIO_PHONE });
   }

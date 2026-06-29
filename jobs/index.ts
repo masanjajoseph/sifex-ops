@@ -1,11 +1,11 @@
 import { env } from "@/lib/env";
 import { Redis } from "ioredis";
-import { Queue, Worker, type Processor } from "bullmq";
+import { Queue, Worker, type Processor, type ConnectionOptions } from "bullmq";
 
 const connection = new Redis(env.REDIS_URL || "redis://localhost:6379", {
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
-});
+}) as unknown as ConnectionOptions;
 
 const DEFAULT_QUEUE = "sifex-jobs";
 
