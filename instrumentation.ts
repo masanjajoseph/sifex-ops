@@ -1,8 +1,11 @@
 import { env } from "@/lib/env";
-import { registerCargoEventHandlers } from "@/features/cargo/events/cargo-event-subscriber";
-import { subscribeToEvents } from "@/lib/tcra/events";
 
 export async function register() {
+  const [{ registerCargoEventHandlers }, { subscribeToEvents }] = await Promise.all([
+    import("@/features/cargo/events/cargo-event-subscriber"),
+    import("@/lib/tcra/events"),
+  ]);
+
   registerCargoEventHandlers();
   subscribeToEvents();
 
