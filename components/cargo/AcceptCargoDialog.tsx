@@ -15,27 +15,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, X, Calculator, Package, DollarSign, Plane, ChevronDown, ChevronRight, Ship, UserSquare2 } from 'lucide-react';
 
-const stationOptions = [
-  { value: 'CAN', label: 'CAN - Guangzhou' },
-  { value: 'HKG', label: 'HKG - Hong Kong' },
-  { value: 'DAR', label: 'DAR - Dar es Salaam' },
-  { value: 'DXB', label: 'DXB - Dubai' },
-  { value: 'NBO', label: 'NBO - Nairobi' },
-  { value: 'SHJ', label: 'SHJ - Sharjah' },
-  { value: 'JNB', label: 'JNB - Johannesburg' },
-  { value: 'MCT', label: 'MCT - Muscat' },
-  { value: 'BOM', label: 'BOM - Mumbai' },
-  { value: 'ADD', label: 'ADD - Addis Ababa' },
-  { value: 'ZNZ', label: 'ZNZ - Zanzibar' },
-];
-
-const awbTypeOptions = [
-  { value: 'CAN_GUANGZHOU', label: 'CAN - Guangzhou' },
-  { value: 'HKG_HONGKONG', label: 'HKG - Hong Kong' },
-  { value: 'DXB_DUBAI', label: 'DXB - Dubai' },
-  { value: 'CAN_EXPRESS', label: 'CAN - Express' },
-  { value: 'MCO_EXPRESS', label: 'MCO - Express' },
-];
 import { DatePicker } from '@/components/ui/date-picker';
 import { cn } from '@/lib/utils';
 
@@ -167,6 +146,13 @@ export function AcceptCargoDialog({ trigger, onSuccess }: AcceptCargoDialogProps
   const [error, setError] = useState('');
   const [expandedHawb, setExpandedHawb] = useState<string>(hawbs[0].id);
   const [resumeDraft, setResumeDraft] = useState<DraftData | null>(null);
+  const [stations, setStations] = useState<{ id: string; code: string; name: string }[]>([]);
+  const [awbTypes, setAwbTypes] = useState<{ code: string; name: string; label: string }[]>([]);
+
+  useEffect(() => {
+    fetch('/api/stations').then(r => r.ok && r.json()).then(j => setStations(j?.data || [])).catch(() => {});
+    fetch('/api/awb-types').then(r => r.ok && r.json()).then(j => setAwbTypes(j?.data || [])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -483,7 +469,7 @@ export function AcceptCargoDialog({ trigger, onSuccess }: AcceptCargoDialogProps
         {trigger || (
           <Button className="gap-2">
             <Package className="h-4 w-4" />
-            Accept Cargo
+            New Export
           </Button>
         )}
       </DialogTrigger>
@@ -491,10 +477,10 @@ export function AcceptCargoDialog({ trigger, onSuccess }: AcceptCargoDialogProps
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Plane className="h-5 w-5 text-blue-600" />
-            Accept Cargo — New Consolidation
+            New Export
           </DialogTitle>
           <DialogDescription>
-            Creates one Master AWB with multiple House AWBs under consolidation
+            Create a new Master AWB with House AWBs under consolidation
           </DialogDescription>
           {resumeDraft && (
             <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/50 dark:bg-amber-950/30">
@@ -557,7 +543,7 @@ export function AcceptCargoDialog({ trigger, onSuccess }: AcceptCargoDialogProps
                     className="flex h-8 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                   >
                     <option value="">Select origin</option>
-                    {stationOptions.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    {stations.map(s => <option key={s.id} value={s.code}>{s.code} - {s.name}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1">
@@ -568,7 +554,7 @@ export function AcceptCargoDialog({ trigger, onSuccess }: AcceptCargoDialogProps
                     className="flex h-8 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                   >
                     <option value="">Select destination</option>
-                    {stationOptions.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    {stations.map(s => <option key={s.id} value={s.code}>{s.code} - {s.name}</option>)}
                   </select>
                 </div>
                 {renderField('Departure Date', mawb.departureDate, (v) => updateMAWB('departureDate', v), { type: 'datetime-local' })}
@@ -699,7 +685,7 @@ export function AcceptCargoDialog({ trigger, onSuccess }: AcceptCargoDialogProps
                               className="flex h-8 w-full rounded-lg border border-gray-200 bg-white px-3 py-1 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                             >
                               <option value="">Select AWB Type</option>
-                              {awbTypeOptions.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                              {awbTypes.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
                             </select>
                           </div>
                           <div className="space-y-1">

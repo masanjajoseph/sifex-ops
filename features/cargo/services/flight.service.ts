@@ -3,7 +3,6 @@ import { masterAWBRepository } from "../repositories/master-awb.repository";
 import { AppError, NotFoundError, ConflictError } from "@/lib/errors";
 
 export interface ScheduleFlightParams {
-  organizationId: string;
   airlineId: string;
   flightNumber: string;
   aircraftType?: string;
@@ -23,7 +22,6 @@ export class FlightService {
 
     const flight = await flightRepository.save({
       id: crypto.randomUUID(),
-      organizationId: params.organizationId,
       airlineId: params.airlineId,
       flightNumber: params.flightNumber,
       aircraftType: params.aircraftType ?? null,

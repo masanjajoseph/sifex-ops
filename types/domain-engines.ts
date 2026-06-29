@@ -95,7 +95,6 @@ export enum UserRole {
 
 export interface Shipment {
   id: string;
-  organizationId: string;
   originWarehouseId: string;
   destinationWarehouseId: string;
   status: ShipmentStatus;
@@ -217,7 +216,6 @@ export interface ShipmentAudit {
 
 export interface Warehouse {
   id: string;
-  organizationId: string;
   name: string;
   status: WarehouseStatus;
   address: string;

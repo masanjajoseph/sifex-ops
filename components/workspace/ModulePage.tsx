@@ -10,6 +10,7 @@ interface ModulePageProps {
   icon: React.ReactNode;
   action?: React.ReactNode;
   breadcrumbs?: Array<{ label: string; href?: string }>;
+  backHref?: string;
   children?: React.ReactNode;
 }
 
@@ -19,6 +20,7 @@ export function ModulePage({
   icon,
   action,
   breadcrumbs,
+  backHref,
   children,
 }: ModulePageProps) {
   return (
@@ -28,6 +30,7 @@ export function ModulePage({
         description={description}
         action={action}
         breadcrumbs={breadcrumbs}
+        backHref={backHref}
       />
       {children ? (
         children

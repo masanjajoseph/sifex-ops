@@ -5,7 +5,6 @@ import { AppError } from "@/lib/errors";
 
 export interface AirlineRecord {
   id: string;
-  organizationId: string;
   name: string;
   iataCode: string;
   icaoCode: string;

@@ -6,7 +6,6 @@ declare module "next-auth" {
     id: string;
     roles: string[];
     permissions: string[];
-    organizationId: string | null;
     branchId: string | null;
     branchIds?: string[];
     departmentId: string | null;
@@ -23,7 +22,6 @@ declare module "next-auth" {
       image?: string | null;
       roles: string[];
       permissions: string[];
-      organizationId: string | null;
       branchId: string | null;
       branchIds?: string[];
       departmentId: string | null;
@@ -39,7 +37,6 @@ declare module "next-auth/jwt" {
     id: string;
     roles: string[];
     permissions: string[];
-    organizationId: string | null;
     branchId: string | null;
     branchIds?: string[];
     departmentId: string | null;

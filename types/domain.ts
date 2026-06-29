@@ -10,7 +10,6 @@ export interface AuthUser {
   name: string;
   roles: string[];
   permissions: string[];
-  organizationId: string | null;
   branchId: string | null;
   branchIds?: string[];
   departmentId: string | null;
@@ -28,7 +27,6 @@ export interface PermissionContext {
   userId: string;
   roles: string[];
   permissions: string[];
-  organizationId: string | null;
   branchId: string | null;
   stations: string[];
 }

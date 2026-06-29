@@ -7,13 +7,13 @@ export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
   const { id } = await params;
   const rate = await prisma.freightRate.findFirst({
-    where: { id, organizationId: session.user.organizationId, deletedAt: null },
+    where: { id,  deletedAt: null },
   });
 
   if (!rate) {
@@ -25,13 +25,13 @@ export const GET = withErrorHandler(async (req: NextRequest, { params }: { param
 
 export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
   const { id } = await params;
   const existing = await prisma.freightRate.findFirst({
-    where: { id, organizationId: session.user.organizationId, deletedAt: null },
+    where: { id,  deletedAt: null },
   });
 
   if (!existing) {
@@ -61,13 +61,13 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
 
 export const DELETE = withErrorHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
   const { id } = await params;
   const existing = await prisma.freightRate.findFirst({
-    where: { id, organizationId: session.user.organizationId, deletedAt: null },
+    where: { id,  deletedAt: null },
   });
 
   if (!existing) {

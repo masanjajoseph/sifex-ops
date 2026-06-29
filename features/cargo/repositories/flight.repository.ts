@@ -5,7 +5,6 @@ import { AppError } from "@/lib/errors";
 
 export interface FlightRecord {
   id: string;
-  organizationId: string;
   airlineId: string;
   flightNumber: string;
   aircraftType: string | null;

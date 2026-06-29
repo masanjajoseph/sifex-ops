@@ -40,7 +40,6 @@ interface ParcelInput {
 }
 
 interface AcceptShipmentParams {
-  organizationId: string;
   userId: string;
   sender: SenderInfo;
   receiver: ReceiverInfo;
@@ -84,9 +83,7 @@ export class AcceptanceService {
       throw new AppError("Origin station not found", 404, "NOT_FOUND");
     }
 
-    const settings = await prisma.systemSettings.findUnique({
-      where: { organizationId: params.organizationId },
-    });
+    const settings = await prisma.systemSettings.findFirst();
 
     const prefix = settings?.trackingPrefix ?? "SFX";
 
@@ -133,19 +130,16 @@ export class AcceptanceService {
     return prisma.$transaction(async (tx) => {
       const senderCustomer = await this.findOrCreateCustomer(
         tx,
-        params.organizationId,
         params.sender
       );
 
       const receiverCustomer = await this.findOrCreateCustomer(
         tx,
-        params.organizationId,
         params.receiver
       );
 
       const masterAWB = await tx.masterAWB.create({
         data: {
-          organizationId: params.organizationId,
           awbNumber,
           trackingNumber,
           orderNumber: params.orderNumber ?? null,
@@ -203,7 +197,6 @@ export class AcceptanceService {
 
       const houseAWB = await tx.houseAWB.create({
         data: {
-          organizationId: params.organizationId,
           masterAWBId: masterAWB.id,
           houseAWBNumber: houseTrackingNumber,
           trackingNumber: houseTrackingNumber,
@@ -280,7 +273,6 @@ export class AcceptanceService {
       }
 
       await trackingService.createTrackingEvent({
-        organizationId: params.organizationId,
         entityType: "MasterAWB",
         entityId: masterAWB.id,
         eventType: "SHIPMENT_INITIATED",
@@ -300,7 +292,6 @@ export class AcceptanceService {
       });
 
       await trackingService.createTrackingEvent({
-        organizationId: params.organizationId,
         entityType: "MasterAWB",
         entityId: masterAWB.id,
         eventType: "SHIPMENT_ACCEPTED",
@@ -314,7 +305,6 @@ export class AcceptanceService {
       });
 
       await trackingService.createTrackingEvent({
-        organizationId: params.organizationId,
         entityType: "MasterAWB",
         entityId: masterAWB.id,
         eventType: "RECEIVED_AT_STATION",
@@ -329,7 +319,6 @@ export class AcceptanceService {
 
       await tx.warehouseInventory.create({
         data: {
-          organizationId: params.organizationId,
           stationId: params.originStationId,
           houseAWBId: houseAWB.id,
           masterAWBId: masterAWB.id,
@@ -346,7 +335,6 @@ export class AcceptanceService {
 
       const billingRecord = await tx.billingRecord.create({
         data: {
-          organizationId: params.organizationId,
           customerId: senderCustomer.id,
           houseAWBId: houseAWB.id,
           masterAWBId: masterAWB.id,
@@ -362,7 +350,6 @@ export class AcceptanceService {
 
       const customsDeclaration = await tx.customsDeclaration.create({
         data: {
-          organizationId: params.organizationId,
           houseAWBId: houseAWB.id,
           masterAWBId: masterAWB.id,
           declarationNumber,
@@ -401,13 +388,11 @@ export class AcceptanceService {
 
   private async findOrCreateCustomer(
     tx: Prisma.TransactionClient,
-    organizationId: string,
     info: SenderInfo | ReceiverInfo
   ) {
     const name = info.company ?? info.name;
     const existing = await tx.customer.findFirst({
       where: {
-        organizationId,
         name,
       },
     });
@@ -420,7 +405,6 @@ export class AcceptanceService {
 
     return tx.customer.create({
       data: {
-        organizationId,
         type: info.company ? "COMPANY" : "INDIVIDUAL",
         name,
         code,

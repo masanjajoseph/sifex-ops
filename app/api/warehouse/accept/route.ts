@@ -16,8 +16,7 @@ export const dynamic = "force-dynamic";
 
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
-  if (!orgId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
   const userId = session.user!.id;
@@ -37,7 +36,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
     if (data.masterAWBId) {
       const masterAWB = await tx.masterAWB.findFirst({
-        where: { id: data.masterAWBId, organizationId: orgId, deletedAt: null },
+        where: { id: data.masterAWBId,  deletedAt: null },
       });
       if (!masterAWB) {
         throw new Error("Master AWB not found");
@@ -56,7 +55,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       });
     } else if (data.houseAWBId) {
       const houseAWB = await tx.houseAWB.findFirst({
-        where: { id: data.houseAWBId, organizationId: orgId, deletedAt: null },
+        where: { id: data.houseAWBId,  deletedAt: null },
       });
       if (!houseAWB) {
         throw new Error("House AWB not found");
@@ -78,7 +77,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
     await tx.trackingEvent.create({
       data: {
-        organizationId: orgId,
+        
         entityType,
         entityId,
         eventType: "WAREHOUSE_RECEIVED",
@@ -104,7 +103,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
     const inventory = await tx.warehouseInventory.create({
       data: {
-        organizationId: orgId,
+        
         stationId: "",
         storageLocationId: data.locationId || null,
         masterAWBId: data.masterAWBId || null,

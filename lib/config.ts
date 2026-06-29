@@ -25,3 +25,5 @@ export const APP_CONFIG = {
   maxLoginAttempts: 5,
   lockoutDurationMinutes: 30,
 } as const;
+
+

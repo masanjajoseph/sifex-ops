@@ -5,7 +5,6 @@ export interface StationRecord {
   name: string;
   code: string;
   type: string;
-  organizationId: string;
   address: string | null;
   city: string | null;
   country: string | null;
@@ -21,7 +20,6 @@ export class StationRepository {
     name: string;
     code: string;
     type: string;
-    organizationId: string;
     branchId: string;
     address?: string;
     city?: string;
@@ -53,15 +51,6 @@ export class StationRepository {
   async findByBranch(branchId: string): Promise<StationRecord[]> {
     const records = await prisma.station.findMany({
       where: { branchId, deletedAt: null, isActive: true },
-      orderBy: { name: "asc" },
-    });
-
-    return records as unknown as StationRecord[];
-  }
-
-  async findByOrganization(organizationId: string): Promise<StationRecord[]> {
-    const records = await prisma.station.findMany({
-      where: { organizationId, deletedAt: null, isActive: true },
       orderBy: { name: "asc" },
     });
 

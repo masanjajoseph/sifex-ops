@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -21,7 +21,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const dateTo = searchParams.get("dateTo") || undefined;
 
   const where: Record<string, unknown> = {
-    organizationId: session.user.organizationId,
+    
     deletedAt: null,
   };
   if (status) where.status = status;
@@ -35,6 +35,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const [items, total] = await Promise.all([
     prisma.flight.findMany({
       where: where as any,
+      include: { originStation: true, destinationStation: true },
       skip: (page - 1) * limit,
       take: limit,
       orderBy: { departureTime: "asc" },
@@ -47,7 +48,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
 
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -58,7 +59,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   const body = await req.json();
   const flight = await prisma.flight.create({
     data: {
-      organizationId: session.user.organizationId,
+      
       airlineId: body.airlineId,
       flightNumber: body.flightNumber,
       aircraftType: body.aircraftType,

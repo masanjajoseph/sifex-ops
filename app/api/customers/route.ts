@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -17,7 +17,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const search = searchParams.get("search") || undefined;
 
   const where: Record<string, unknown> = {
-    organizationId: session.user.organizationId,
+    
     deletedAt: null,
   };
   if (search) {
@@ -44,7 +44,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
 
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -52,7 +52,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
   const customer = await prisma.customer.create({
     data: {
-      organizationId: session.user.organizationId,
+      
       type: body.type || "COMPANY",
       name: body.name,
       code: body.code,

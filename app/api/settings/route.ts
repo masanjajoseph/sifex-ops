@@ -7,13 +7,11 @@ export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
-  const settings = await prisma.systemSettings.findUnique({
-    where: { organizationId: session.user.organizationId },
-  });
+  const settings = await prisma.systemSettings.findFirst();
 
   if (!settings) {
     return apiError(new NotFoundError("Organization settings"), 404);
@@ -24,7 +22,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
 
 export const PUT = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -42,21 +40,21 @@ export const PUT = withErrorHandler(async (req: NextRequest) => {
     if (body[key] !== undefined) data[key] = body[key];
   }
 
-  const settings = await prisma.systemSettings.upsert({
-    where: { organizationId: session.user.organizationId },
-    update: data as any,
-    create: {
-      organizationId: session.user.organizationId,
-      companyName: body.companyName || "",
-      companyCode: body.companyCode || "",
-      defaultCurrency: body.defaultCurrency || "USD",
-      exchangeRate: body.exchangeRate || 1.0,
-      taxPercentage: body.taxPercentage || 0,
-      trackingPrefix: body.trackingPrefix || "SFX",
-      operationalStations: body.operationalStations || [],
-      ...data,
-    } as any,
-  });
+  const existing = await prisma.systemSettings.findFirst();
+  const settings = existing
+    ? await prisma.systemSettings.update({ where: { id: existing.id }, data: data as any })
+    : await prisma.systemSettings.create({
+      data: {
+        companyName: body.companyName || "",
+        companyCode: body.companyCode || "",
+        defaultCurrency: body.defaultCurrency || "USD",
+        exchangeRate: body.exchangeRate || 1.0,
+        taxPercentage: body.taxPercentage || 0,
+        trackingPrefix: body.trackingPrefix || "SFX",
+        operationalStations: body.operationalStations || [],
+        ...data,
+      } as any,
+    });
 
   return apiSuccess(settings);
 });

@@ -5,7 +5,6 @@ import { AppError } from "@/lib/errors";
 
 export interface BillingRecordRecord {
   id: string;
-  organizationId: string;
   houseAWBId: string | null;
   masterAWBId: string | null;
   status: string;
@@ -46,7 +45,6 @@ export class BillingRecordRepository {
       page?: number;
       pageSize?: number;
       status?: string;
-      organizationId?: string;
       houseAWBId?: string;
       masterAWBId?: string;
     } = {}
@@ -56,7 +54,6 @@ export class BillingRecordRepository {
     };
 
     if (options.status) where.status = options.status;
-    if (options.organizationId) where.organizationId = options.organizationId;
     if (options.houseAWBId) where.houseAWBId = options.houseAWBId;
     if (options.masterAWBId) where.masterAWBId = options.masterAWBId;
 

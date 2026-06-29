@@ -1,10 +1,36 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { TrackingSearch } from '@/components/cargo/TrackingSearch';
 import { MapPin } from 'lucide-react';
+import { Skeleton } from '@/components/ui/Skeleton';
+
+interface Station {
+  id: string;
+  code: string;
+  name: string;
+}
 
 export default function TrackingPage() {
+  const [stations, setStations] = useState<Station[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchStations = async () => {
+      try {
+        const res = await fetch('/api/stations');
+        if (res.ok) {
+          const json = await res.json();
+          setStations(json.data || []);
+        }
+      } catch {} finally {
+        setLoading(false);
+      }
+    };
+    fetchStations();
+  }, []);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -42,16 +68,24 @@ export default function TrackingPage() {
               <MapPin className="h-4 w-4 text-blue-500" />
               Supported Stations
             </h3>
-            <div className="flex flex-wrap gap-1.5">
-              {['CAN', 'HKG', 'DAR', 'DXB', 'NBO', 'SHJ', 'JNB', 'MCT', 'BOM', 'ADD', 'ZNZ'].map((s) => (
-                <span
-                  key={s}
-                  className="inline-flex items-center rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                >
-                  {s}
-                </span>
-              ))}
-            </div>
+            {loading ? (
+              <div className="flex flex-wrap gap-1.5">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-6 w-16 rounded-md" />
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {stations.map((s) => (
+                  <span
+                    key={s.id}
+                    className="inline-flex items-center rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                  >
+                    {s.code}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

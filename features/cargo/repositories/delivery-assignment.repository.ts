@@ -4,7 +4,6 @@ import { paginate } from "@/lib/db-helpers";
 
 export interface DeliveryAssignmentRecord {
   id: string;
-  organizationId: string;
   houseAWBId: string | null;
   masterAWBId: string | null;
   riderId: string;
@@ -26,7 +25,6 @@ export interface DeliveryAssignmentRecord {
 
 export class DeliveryAssignmentRepository {
   async create(data: {
-    organizationId: string;
     houseAWBId?: string;
     masterAWBId?: string;
     riderId: string;
@@ -39,7 +37,6 @@ export class DeliveryAssignmentRepository {
   }): Promise<DeliveryAssignmentRecord> {
     const record = await prisma.deliveryAssignment.create({
       data: {
-        organizationId: data.organizationId,
         houseAWBId: data.houseAWBId,
         masterAWBId: data.masterAWBId,
         riderId: data.riderId,
@@ -73,33 +70,6 @@ export class DeliveryAssignmentRepository {
     };
 
     if (options.status) where.status = options.status;
-
-    return paginate<DeliveryAssignmentRecord>(
-      async (skip, take) => {
-        const records = await prisma.deliveryAssignment.findMany({
-          where,
-          skip,
-          take,
-          orderBy: { assignedAt: "desc" },
-        });
-        return records as unknown as DeliveryAssignmentRecord[];
-      },
-      () => prisma.deliveryAssignment.count({ where }),
-      options.page,
-      options.pageSize
-    );
-  }
-
-  async findByOrganization(
-    organizationId: string,
-    statuses: string[],
-    options: { page?: number; pageSize?: number } = {}
-  ) {
-    const where: Prisma.DeliveryAssignmentWhereInput = {
-      organizationId,
-      deletedAt: null,
-      status: { in: statuses },
-    };
 
     return paginate<DeliveryAssignmentRecord>(
       async (skip, take) => {

@@ -46,11 +46,6 @@ export const hasBranchAccess = (session: Session | null, branchId: string): bool
   return session.user.branchId === branchId;
 };
 
-export const isInOrganization = (session: Session | null, organizationId: string): boolean => {
-  if (!session?.user?.organizationId) return false;
-  return session.user.organizationId === organizationId;
-};
-
 // Super admin check
 export const isSuperAdmin = (session: Session | null): boolean => {
   return hasRole(session, "SUPER_ADMIN");

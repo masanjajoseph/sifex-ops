@@ -1,0 +1,33 @@
+export const CACHE_KEYS = {
+  stations: "stations:*",
+  station: (id: string) => `station:${id}`,
+  airlines: "airlines:*",
+  airline: (id: string) => `airline:${id}`,
+  awbTypes: "awb-types:*",
+  currencies: "currencies:*",
+  freightRates: "freight-rates:*",
+  exchangeRate: "exchange-rate:latest",
+  settings: "settings:system",
+  permissions: "permissions:*",
+  roles: "roles:*",
+  user: (id: string) => `user:${id}`,
+  customer: (id: string) => `customer:${id}`,
+  masterAWB: (id: string) => `master-awb:${id}`,
+  houseAWB: (id: string) => `house-awb:${id}`,
+  billing: (id: string) => `billing:${id}`,
+  dashboard: (scope: string) => `dashboard:${scope}`,
+  manifest: (id: string) => `manifest:${id}`,
+  flight: (id: string) => `flight:${id}`,
+  customs: (id: string) => `customs:${id}`,
+  tracking: (entityType: string, entityId: string) => `tracking:${entityType}:${entityId}`,
+  timeline: (entityType: string, entityId: string) => `timeline:${entityType}:${entityId}`,
+  list: (resource: string, params: string) => `list:${resource}:${params}`,
+} as const;
+
+export const CACHE_TTL = {
+  SHORT: 60,
+  MEDIUM: 300,
+  LONG: 900,
+  DAY: 86400,
+  WEEK: 604800,
+} as const;

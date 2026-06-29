@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest, { params }: { params: Promise<{ entityType: string; entityId: string }> }) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -19,7 +19,7 @@ export const GET = withErrorHandler(async (req: NextRequest, { params }: { param
   }
 
   const events = await prisma.trackingEvent.findMany({
-    where: { entityType, entityId, organizationId: session.user.organizationId },
+    where: { entityType, entityId,  },
     orderBy: { createdAt: "desc" },
   });
 

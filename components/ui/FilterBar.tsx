@@ -60,16 +60,19 @@ export function FilterBar({ filters, className, onClearAll }: FilterBarProps) {
                 {isActive ? `${filter.label}: ${selectedLabel}` : filter.label}
               </span>
               {isActive ? (
-                <button
+                <span
                   onClick={(e) => {
                     e.stopPropagation();
                     filter.onChange?.('all');
                   }}
-                  className="ml-1 rounded p-0.5 hover:bg-blue-200/50 dark:hover:bg-blue-800/50"
+                  className="ml-1 cursor-pointer rounded p-0.5 hover:bg-blue-200/50 dark:hover:bg-blue-800/50"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); filter.onChange?.('all'); } }}
                   aria-label={`Clear ${filter.label} filter`}
                 >
                   <X className="h-3 w-3" />
-                </button>
+                </span>
               ) : (
                 <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
               )}

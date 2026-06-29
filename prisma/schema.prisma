@@ -29,7 +29,9 @@ enum CargoStatus {
   CUSTOMS_QUERY
   CUSTOMS_HOLD
   RELEASED
+  AWAITING_DELIVERY
   OUT_FOR_DELIVERY
+  PICKED_UP
   DELIVERED
   POD_SIGNED
   CANCELLED
@@ -66,9 +68,19 @@ enum BillingStatus {
   NOT_BILLED
   DRAFT
   INVOICED
+  UNPAID
   PARTIAL_PAID
   PAID
+  CREDITED
   REFUNDED
+}
+
+enum PaymentMethod {
+  CARD
+  MOBILE
+  LIPA_NAMBA
+  BANK
+  CASH
 }
 
 enum WarehouseStatus {
@@ -113,8 +125,6 @@ model User {
   emailVerified DateTime? @map("email_verified")
   lastLoginAt   DateTime? @map("last_login_at")
 
-  organizationId String?       @map("organization_id") @db.Uuid
-  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   departmentId String?     @map("department_id") @db.Uuid
   department   Department? @relation(fields: [departmentId], references: [id])
@@ -128,7 +138,12 @@ model User {
   userStations  UserStation[]
   userRoles     UserRole[]
   rider         Rider?
-  createdAudits AuditLog[]    @relation("CreatedBy")
+  createdAudits     AuditLog[]    @relation("CreatedBy")
+  createdMasterAWBs MasterAWB[]   @relation("CreatedMasterAWBs")
+  createdHouseAWBs  HouseAWB[]    @relation("CreatedHouseAWBs")
+  createdBillings   BillingRecord[] @relation("CreatedBillings")
+  processedPayments Payment[]     @relation("ProcessedPayments")
+  deliveryNotes     DeliveryNote[] @relation("DeliveryNoteCreatedBy")
 
   passwordResetToken  String?   @map("password_reset_token")
   passwordResetExpiry DateTime? @map("password_reset_expiry")
@@ -203,37 +218,9 @@ model RolePermission {
 // TENANCY & ORGANIZATION
 // ============================================
 
-model Organization {
-  id       String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  name     String
-  code     String  @unique
-  email    String?
-  phone    String?
-  address  String?
-  city     String?
-  country  String?
-  logo     String?
-  website  String?
-  isActive Boolean @default(true) @map("is_active")
-
-  users             User[]
-  customers         Customer[]
-  branches          Branch[]
-  stations          Station[]
-  settings          SystemSettings?
-  freightRates      FreightRate[]
-  quotationRequests QuotationRequest[]
-
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
-
-  @@map("organizations")
-}
 
 model Customer {
   id             String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String  @map("organization_id") @db.Uuid
   type           String  @default("COMPANY")
   name           String
   code           String  @unique
@@ -260,7 +247,6 @@ model Customer {
 
   isActive Boolean @default(true) @map("is_active")
 
-  organization Organization @relation(fields: [organizationId], references: [id])
 
   // Cargo relations
   shipperFor  HouseAWB[] @relation("Shipper")
@@ -276,7 +262,6 @@ model Customer {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  @@index([organizationId])
   @@index([code])
   @@map("customers")
 }
@@ -324,7 +309,6 @@ model Branch {
   id             String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   name           String  @unique
   code           String  @unique
-  organizationId String  @map("organization_id") @db.Uuid
   address        String?
   city           String?
   country        String?
@@ -332,7 +316,6 @@ model Branch {
   email          String?
   isActive       Boolean @default(true) @map("is_active")
 
-  organization Organization @relation(fields: [organizationId], references: [id])
   users        User[]
   stations     Station[]
 
@@ -346,16 +329,14 @@ model Branch {
 model Station {
   id             String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   name           String
-  code           StationCode
+  code           StationCode   @unique
   type           String
-  organizationId String      @map("organization_id") @db.Uuid
   address        String?
   city           String?
   country        String?
   branchId       String      @map("branch_id") @db.Uuid
   isActive       Boolean     @default(true) @map("is_active")
 
-  organization       Organization         @relation(fields: [organizationId], references: [id])
   branch             Branch               @relation(fields: [branchId], references: [id])
   userStations       UserStation[]
   warehouseZones     WarehouseZone[]
@@ -366,11 +347,14 @@ model Station {
   destinationMasterAWBs MasterAWB[] @relation("DestinationStation")
   currentMasterAWBs     MasterAWB[] @relation("CurrentStation")
 
+  // Flight relations
+  originFlights      Flight[] @relation("FlightOrigin")
+  destinationFlights Flight[] @relation("FlightDestination")
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  @@unique([organizationId, code])
   @@map("stations")
 }
 
@@ -394,7 +378,6 @@ model UserStation {
 
 model SystemSettings {
   id                       String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId           String   @unique @map("organization_id") @db.Uuid
   defaultCurrency          String   @default("USD") @map("default_currency")
   exchangeRate             Float    @default(1.0) @map("exchange_rate")
   taxPercentage            Float    @default(0) @map("tax_percentage")
@@ -405,7 +388,6 @@ model SystemSettings {
   companyCode              String   @map("company_code")
   operationalStations      String[] @map("operational_stations")
 
-  organization Organization @relation(fields: [organizationId], references: [id])
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -414,25 +396,55 @@ model SystemSettings {
 }
 
 // ============================================
-// FREIGHT RATE SYSTEM
+// REFERENCE DATA (Seedable)
 // ============================================
 
-model FreightRate {
-  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String       @map("organization_id") @db.Uuid
-  shipmentType   ShipmentType @map("shipment_type")
-  ratePerKg      Float        @map("rate_per_kg")
-  currency       String       @default("USD")
-  isActive       Boolean      @default(true) @map("is_active")
-
-  organization Organization @relation(fields: [organizationId], references: [id])
+model AWBType {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  code      String   @unique
+  name      String
+  label     String
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  @@index([organizationId, shipmentType])
-  @@index([organizationId, isActive])
+  @@map("awb_types")
+}
+
+model Currency {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  code      String   @unique
+  name      String
+  symbol    String?
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("currencies")
+}
+
+// ============================================
+// FREIGHT RATE SYSTEM
+// ============================================
+
+model FreightRate {
+  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  shipmentType   ShipmentType @map("shipment_type")
+  ratePerKg      Float        @map("rate_per_kg")
+  currency       String       @default("USD")
+  isActive       Boolean      @default(true) @map("is_active")
+
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
   @@map("freight_rates")
 }
 
@@ -442,7 +454,6 @@ model FreightRate {
 
 model QuotationRequest {
   id             String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String @map("organization_id") @db.Uuid
   customerId     String @map("customer_id") @db.Uuid
   quoteNumber    String @unique @map("quote_number")
   status         String @default("DRAFT")
@@ -476,9 +487,7 @@ model QuotationRequest {
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
   deletedAt    DateTime?    @map("deleted_at")
-  organization Organization @relation(fields: [organizationId], references: [id])
 
-  @@index([organizationId])
   @@index([customerId])
   @@index([status])
   @@map("quotation_requests")
@@ -490,7 +499,6 @@ model QuotationRequest {
 
 model MasterAWB {
   id             String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String @map("organization_id") @db.Uuid
 
   // Identifiers
   awbNumber      String  @unique @map("awb_number")
@@ -551,7 +559,7 @@ model MasterAWB {
   currentStation       Station? @relation("CurrentStation", fields: [currentStationId], references: [id])
 
   // Airline & Flight
-  airlineId     String   @map("airline_id") @db.Uuid
+  airlineId     String   @map("airline_id")
   flightNumber  String   @map("flight_number")
   departureTime DateTime @map("departure_time")
   arrivalTime   DateTime @map("arrival_time")
@@ -570,6 +578,10 @@ model MasterAWB {
   // Relations
   houseAWBs HouseAWB[]
 
+  // User tracking
+  createdById String? @map("created_by_id") @db.Uuid
+  createdBy   User?   @relation("CreatedMasterAWBs", fields: [createdById], references: [id])
+
   // Timestamps
   createdAt      DateTime  @default(now()) @map("created_at")
   consolidatedAt DateTime? @map("consolidated_at")
@@ -580,18 +592,17 @@ model MasterAWB {
   updatedAt      DateTime  @updatedAt @map("updated_at")
   deletedAt      DateTime? @map("deleted_at")
 
-  @@index([organizationId])
   @@index([trackingNumber])
   @@index([awbNumber])
   @@index([flightNumber])
   @@index([cargoStatus])
-  @@index([organizationId, cargoStatus])
+  @@index([deletedAt, cargoStatus])
+  @@index([deletedAt, createdAt])
   @@map("master_awbs")
 }
 
 model HouseAWB {
   id             String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String  @map("organization_id") @db.Uuid
   masterAWBId    String? @map("master_awb_id") @db.Uuid
 
   // Identifiers
@@ -636,6 +647,7 @@ model HouseAWB {
   cargoStatus     CargoStatus     @default(INITIATED) @map("cargo_status")
   warehouseStatus WarehouseStatus @default(RECEIVED) @map("warehouse_status")
   billingStatus   BillingStatus   @default(NOT_BILLED) @map("billing_status")
+  paymentMethod   PaymentMethod?  @map("payment_method")
 
   // Dates
   receivedAt          DateTime? @map("received_at")
@@ -646,8 +658,15 @@ model HouseAWB {
   parcels   Parcel[]
 
   // Billing & customs
-  houseAWBBillingId    String? @map("house_awb_billing_id") @db.Uuid
-  customsDeclarationId String? @map("customs_declaration_id") @db.Uuid
+  houseAWBBillingId    String?         @map("house_awb_billing_id") @db.Uuid
+  customsDeclarationId String?         @map("customs_declaration_id") @db.Uuid
+  billingRecords       BillingRecord[]
+  deliveryNotes        DeliveryNote[]
+  deliveryAssignments  DeliveryAssignment[]
+
+  // User tracking
+  createdById String? @map("created_by_id") @db.Uuid
+  createdBy   User?   @relation("CreatedHouseAWBs", fields: [createdById], references: [id])
 
   // Timestamps
   createdAt      DateTime  @default(now()) @map("created_at")
@@ -658,11 +677,11 @@ model HouseAWB {
   updatedAt      DateTime  @updatedAt @map("updated_at")
   deletedAt      DateTime? @map("deleted_at")
 
-  @@index([organizationId])
   @@index([masterAWBId])
   @@index([cargoStatus])
   @@index([trackingNumber])
-  @@index([organizationId, cargoStatus])
+  @@index([deletedAt, cargoStatus])
+  @@index([deletedAt, createdAt])
   @@map("house_awbs")
 }
 
@@ -784,7 +803,6 @@ model StorageLocation {
 
 model WarehouseInventory {
   id                String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId    String          @map("organization_id") @db.Uuid
   stationId         String          @map("station_id") @db.Uuid
   storageLocationId String?         @map("storage_location_id") @db.Uuid
   houseAWBId        String?         @map("house_awb_id") @db.Uuid
@@ -804,7 +822,6 @@ model WarehouseInventory {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  @@index([organizationId])
   @@index([stationId])
   @@index([storageLocationId])
   @@index([status])
@@ -817,11 +834,10 @@ model WarehouseInventory {
 
 model TrackingEvent {
   id                String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId    String      @map("organization_id") @db.Uuid
   entityType        String      @map("entity_type") // MasterAWB | HouseAWB | Parcel
   entityId          String      @map("entity_id") @db.Uuid
   eventType         String      @map("event_type")
-  status            CargoStatus
+  status            String
   title             String
   description       String?
   userId            String      @map("user_id") @db.Uuid
@@ -867,7 +883,6 @@ model Rider {
 
 model DeliveryAssignment {
   id              String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId  String    @map("organization_id") @db.Uuid
   houseAWBId      String?   @map("house_awb_id") @db.Uuid
   masterAWBId     String?   @map("master_awb_id") @db.Uuid
   riderId         String    @map("rider_id") @db.Uuid
@@ -883,16 +898,43 @@ model DeliveryAssignment {
   failedAt        DateTime? @map("failed_at")
   failureReason   String?   @map("failure_reason")
 
-  rider Rider @relation(fields: [riderId], references: [id])
+  rider   Rider    @relation(fields: [riderId], references: [id])
+  houseAWB HouseAWB? @relation(fields: [houseAWBId], references: [id])
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  @@index([organizationId])
   @@index([riderId])
   @@index([status])
   @@map("delivery_assignments")
+}
+
+model DeliveryNote {
+  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  houseAWBId       String   @map("house_awb_id") @db.Uuid
+  deliveryType     String   @default("DELIVERY") @map("delivery_type") // DELIVERY or PICKUP
+  status           String   @default("PENDING") // PENDING or SIGNED
+  recipientName    String   @map("recipient_name")
+  recipientPhone   String?  @map("recipient_phone")
+  recipientIdType  String?  @map("recipient_id_type") // NATIONAL_ID, PASSPORT, DRIVERS_LICENSE
+  recipientIdNumber String? @map("recipient_id_number")
+  relation         String   @default("SELF") // SELF or REPRESENTATIVE
+  representativeName String? @map("representative_name")
+  signature        String?  // base64 or text signature
+  signedAt         DateTime? @map("signed_at")
+  notes            String?
+  createdById      String   @map("created_by_id") @db.Uuid
+
+  houseAWB  HouseAWB @relation(fields: [houseAWBId], references: [id])
+  createdBy User     @relation("DeliveryNoteCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([houseAWBId])
+  @@index([status])
+  @@map("delivery_notes")
 }
 
 // ============================================
@@ -964,17 +1006,19 @@ model AuditLog {
 
 model Flight {
   id                   String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId       String   @map("organization_id") @db.Uuid
-  airlineId            String   @map("airline_id") @db.Uuid
+  airlineId            String   @map("airline_id")
   flightNumber         String   @map("flight_number")
   aircraftType         String?  @map("aircraft_type")
-  originStationId      String   @map("origin_station_id")
-  destinationStationId String   @map("destination_station_id")
+  originStationId      String   @map("origin_station_id") @db.Uuid
+  destinationStationId String   @map("destination_station_id") @db.Uuid
   departureTime        DateTime @map("departure_time")
   arrivalTime          DateTime @map("arrival_time")
   totalCapacity        Float    @default(0) @map("total_capacity")
   availableCapacity    Float    @default(0) @map("available_capacity")
   status               String   @default("SCHEDULED")
+
+  originStation      Station  @relation("FlightOrigin", fields: [originStationId], references: [id])
+  destinationStation Station  @relation("FlightDestination", fields: [destinationStationId], references: [id])
 
   manifests Manifest[]
 
@@ -982,7 +1026,7 @@ model Flight {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  @@index([organizationId])
+  @@unique([flightNumber, airlineId, departureTime])
   @@index([flightNumber])
   @@index([status])
   @@map("flights")
@@ -990,7 +1034,6 @@ model Flight {
 
 model Airline {
   id             String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String @map("organization_id") @db.Uuid
   name           String
   iataCode       String @unique @map("iata_code")
   icaoCode       String @unique @map("icao_code")
@@ -1002,14 +1045,12 @@ model Airline {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  @@index([organizationId])
   @@index([iataCode])
   @@map("airlines")
 }
 
 model Manifest {
   id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String       @map("organization_id") @db.Uuid
   flightId       String       @map("flight_id") @db.Uuid
   manifestNumber String       @unique @map("manifest_number")
   manifestType   ManifestType @map("manifest_type")
@@ -1036,7 +1077,6 @@ model Manifest {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  @@index([organizationId])
   @@index([manifestNumber])
   @@index([flightId])
   @@index([status])
@@ -1069,7 +1109,6 @@ model ShipmentTimeline {
 
 model ShipmentScan {
   id             String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId String  @map("organization_id") @db.Uuid
   eventType      String  @map("event_type")
   barcode        String
   houseAWBId     String? @map("house_awb_id") @db.Uuid
@@ -1088,14 +1127,12 @@ model ShipmentScan {
   @@index([barcode])
   @@index([houseAWBId])
   @@index([masterAWBId])
-  @@index([organizationId, createdAt])
   @@index([eventType, createdAt])
   @@map("shipment_scans")
 }
 
 model CustomsDeclaration {
   id                String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId    String        @map("organization_id") @db.Uuid
   houseAWBId        String?       @map("house_awb_id") @db.Uuid
   masterAWBId       String?       @map("master_awb_id") @db.Uuid
   declarationNumber String        @unique @map("declaration_number")
@@ -1119,7 +1156,6 @@ model CustomsDeclaration {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  @@index([organizationId])
   @@index([declarationNumber])
   @@index([status])
   @@index([houseAWBId])
@@ -1149,7 +1185,6 @@ model CustomsItem {
 
 model BillingRecord {
   id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organizationId  String        @map("organization_id") @db.Uuid
   customerId      String?       @map("customer_id") @db.Uuid
   houseAWBId      String?       @map("house_awb_id") @db.Uuid
   masterAWBId     String?       @map("master_awb_id") @db.Uuid
@@ -1160,8 +1195,13 @@ model BillingRecord {
   remainingAmount Float         @default(0) @map("remaining_amount")
 
   customer       Customer?       @relation(fields: [customerId], references: [id])
+  houseAWB       HouseAWB?       @relation(fields: [houseAWBId], references: [id])
   billingCharges BillingCharge[]
   payments       Payment[]
+
+  // User tracking
+  createdById String? @map("created_by_id") @db.Uuid
+  createdBy   User?   @relation("CreatedBillings", fields: [createdById], references: [id])
 
   invoicedAt     DateTime? @map("invoiced_at")
   firstPaymentAt DateTime? @map("first_payment_at")
@@ -1172,9 +1212,10 @@ model BillingRecord {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  @@index([organizationId])
   @@index([houseAWBId])
+  @@index([masterAWBId])
   @@index([status])
+  @@index([deletedAt, status])
   @@map("billing_records")
 }
 
@@ -1208,8 +1249,47 @@ model Payment {
 
   billingRecord BillingRecord @relation(fields: [billingRecordId], references: [id])
 
+  // User tracking
+  processedById String? @map("processed_by_id") @db.Uuid
+  processedBy   User?   @relation("ProcessedPayments", fields: [processedById], references: [id])
+
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([billingRecordId])
   @@map("payments")
+}
+
+model TcraOutbox {
+  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  houseAWBId     String   @map("house_awb_id") @db.Uuid
+  trackingNumber String   @map("tracking_number")
+  eventType      String   @map("event_type")
+  payload        Json     @db.JsonB
+  status         String   @default("PENDING")
+  response       Json?    @db.JsonB
+  error          String?
+  attempts       Int      @default(0)
+  sentAt         DateTime? @map("sent_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("tcra_outbox")
+}
+
+model TcraSnapshotLog {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  dateFrom     DateTime @map("date_from")
+  dateTo       DateTime @map("date_to")
+  totalEvents  Int      @default(0) @map("total_events")
+  response     Json?    @db.JsonB
+  status       String   @default("PENDING")
+  error        String?
+  sentAt       DateTime? @map("sent_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("tcra_snapshot_logs")
 }

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -16,14 +16,19 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "10")));
   const status = searchParams.get("status") || undefined;
+  const notStatus = searchParams.get("notStatus") || undefined; // comma-separated
   const masterAWBId = searchParams.get("masterAWBId") || undefined;
   const search = searchParams.get("search") || undefined;
 
   const where: Record<string, unknown> = {
-    organizationId: session.user.organizationId,
+    
     deletedAt: null,
   };
   if (status) where.cargoStatus = status;
+  else if (notStatus) {
+    const excluded = notStatus.split(',').map(s => s.trim());
+    where.cargoStatus = { notIn: excluded };
+  }
   if (masterAWBId) where.masterAWBId = masterAWBId;
   if (search) {
     where.OR = [
@@ -48,7 +53,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
 
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -56,7 +61,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
   const houseAWB = await prisma.houseAWB.create({
     data: {
-      organizationId: session.user.organizationId,
+      createdById: session.user.id,
       masterAWBId: body.masterAWBId || null,
       houseAWBNumber: body.houseAWBNumber,
       trackingNumber: body.trackingNumber || body.houseAWBNumber,
@@ -82,6 +87,20 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     },
     include: { parcels: true, shipper: true, receiver: true },
   });
+
+  if (houseAWB.masterAWBId) {
+    const agg = await prisma.houseAWB.aggregate({
+      where: { masterAWBId: houseAWB.masterAWBId, deletedAt: null },
+      _sum: { pieces: true, weight: true },
+    });
+    await prisma.masterAWB.update({
+      where: { id: houseAWB.masterAWBId },
+      data: {
+        awbPieces: agg._sum.pieces || 0,
+        awbWeight: agg._sum.weight || 0,
+      },
+    });
+  }
 
   return apiSuccess(houseAWB, 201);
 });

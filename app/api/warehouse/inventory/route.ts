@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -20,7 +20,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const search = searchParams.get("search") || undefined;
 
   const where: Record<string, unknown> = {
-    organizationId: session.user.organizationId,
+    
     deletedAt: null,
   };
   if (stationId) where.stationId = stationId;
@@ -49,7 +49,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
 
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -64,7 +64,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   }
 
   const inventoryData: Record<string, unknown> = {
-    organizationId: session.user.organizationId,
+    
     stationId: body.stationId,
     storageLocationId: body.storageLocationId || null,
     houseAWBId: body.houseAWBId || null,

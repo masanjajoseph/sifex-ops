@@ -1,22 +1,65 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plane, PlaneTakeoff, PlaneLanding, Clock, RefreshCw } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/button';
 
-const mockFlights = [
-  { flight: 'SX-452', origin: 'DAR', destination: 'NBO', status: 'On Time' as const, departure: '14:30', cargo: 128 },
-  { flight: 'SX-891', origin: 'NBO', destination: 'DXB', status: 'Boarding' as const, departure: '15:00', cargo: 89 },
-  { flight: 'SX-334', origin: 'DAR', destination: 'ADD', status: 'Delayed' as const, departure: '16:15', cargo: 201 },
-  { flight: 'SX-776', origin: 'DXB', destination: 'CAN', status: 'On Time' as const, departure: '17:00', cargo: 67 },
-];
+interface FlightItem {
+  id: string;
+  flightNumber: string;
+  originStationId: string;
+  destinationStationId: string;
+  status: string;
+  departureTime: string;
+  arrivalTime: string;
+  totalCapacity: number;
+  availableCapacity: number;
+  originStation?: { code: string; name: string };
+  destinationStation?: { code: string; name: string };
+}
+
+const statusVariant = (s: string): 'success' | 'warning' | 'error' | 'info' | 'pending' => {
+  switch (s) {
+    case 'SCHEDULED': return 'pending';
+    case 'BOARDING': return 'info';
+    case 'DEPARTED': return 'success';
+    case 'ARRIVED': case 'LANDED': return 'success';
+    case 'DELAYED': return 'warning';
+    case 'CANCELLED': return 'error';
+    default: return 'pending';
+  }
+};
 
 export default function FlightsPage() {
-  const [flights] = useState(mockFlights);
+  const [data, setData] = useState<FlightItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/flights?limit=50');
+      if (res.ok) {
+        const json = await res.json();
+        setData(json.data || []);
+      }
+    } catch {} finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const stats = useMemo(() => ({
+    today: data.length,
+    inTransit: data.filter((f) => f.status === 'DEPARTED' || f.status === 'BOARDING').length,
+    arrived: data.filter((f) => f.status === 'ARRIVED' || f.status === 'LANDED').length,
+    cargoBooked: data.reduce((s, f) => s + (f.totalCapacity - f.availableCapacity), 0),
+  }), [data]);
 
   return (
     <div className="space-y-6">
@@ -25,20 +68,26 @@ export default function FlightsPage() {
         description="Flight scheduling and cargo space management"
         breadcrumbs={[{ label: 'Workspace', href: '/workspace' }, { label: 'Flights' }]}
         action={
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={fetchData}>
             <RefreshCw className="mr-1 h-4 w-4" /> Refresh
           </Button>
         }
       />
 
       <div className="grid gap-4 sm:grid-cols-4">
-        <StatCard label="Today's Flights" value="12" icon={<PlaneTakeoff className="h-5 w-5" />} />
-        <StatCard label="In Transit" value="8" icon={<Plane className="h-5 w-5" />} />
-        <StatCard label="Arrived Today" value="6" icon={<PlaneLanding className="h-5 w-5" />} />
-        <StatCard label="Cargo Booked" value="485" icon={<Clock className="h-5 w-5" />} />
+        <StatCard label="Today&apos;s Flights" value={stats.today} icon={<PlaneTakeoff className="h-5 w-5" />} />
+        <StatCard label="In Transit" value={stats.inTransit} icon={<Plane className="h-5 w-5" />} />
+        <StatCard label="Arrived Today" value={stats.arrived} icon={<PlaneLanding className="h-5 w-5" />} />
+        <StatCard label="Cargo Booked" value={stats.cargoBooked} icon={<Clock className="h-5 w-5" />} />
       </div>
 
-      {flights.length === 0 ? (
+      {loading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
+      ) : data.length === 0 ? (
         <EmptyState
           icon={<Plane className="h-12 w-12" />}
           title="No flights scheduled"
@@ -50,22 +99,19 @@ export default function FlightsPage() {
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Active Flights</h2>
           </div>
           <div className="divide-y divide-gray-100 dark:divide-gray-800">
-            {flights.map((f) => (
-              <div key={f.flight} className="flex items-center justify-between px-5 py-3">
+            {data.map((f) => (
+              <div key={f.id} className="flex items-center justify-between px-5 py-3">
                 <div className="flex items-center gap-3">
                   <Plane className="h-4 w-4 text-gray-400" />
                   <div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">{f.flight}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{f.origin} → {f.destination}</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{f.flightNumber}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{f.originStation?.code || f.originStationId} → {f.destinationStation?.code || f.destinationStationId}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">{f.cargo} items</span>
-                  <span className="text-sm font-medium text-gray-900 dark:text-white">{f.departure}</span>
-                  <StatusBadge
-                    status={f.status === 'On Time' ? 'success' : f.status === 'Boarding' ? 'info' : 'warning'}
-                    label={f.status}
-                  />
+                  <span className="text-xs text-gray-500 dark:text-gray-400">{Math.round(f.totalCapacity - f.availableCapacity)} items</span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{new Date(f.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  <StatusBadge status={statusVariant(f.status)} label={f.status.replace(/_/g, ' ')} />
                 </div>
               </div>
             ))}

@@ -3,10 +3,12 @@ import { AppError } from "@/lib/errors";
 
 export const BILLING_STATUS_TRANSITIONS: Record<BillingStatus, BillingStatus[]> = {
   [BillingStatus.NOT_BILLED]: [BillingStatus.DRAFT],
-  [BillingStatus.DRAFT]: [BillingStatus.INVOICED],
-  [BillingStatus.INVOICED]: [BillingStatus.PARTIAL_PAID, BillingStatus.PAID],
+  [BillingStatus.DRAFT]: [BillingStatus.INVOICED, BillingStatus.UNPAID],
+  [BillingStatus.INVOICED]: [BillingStatus.PARTIAL_PAID, BillingStatus.PAID, BillingStatus.UNPAID],
+  [BillingStatus.UNPAID]: [BillingStatus.PAID, BillingStatus.CREDITED],
   [BillingStatus.PARTIAL_PAID]: [BillingStatus.PAID],
   [BillingStatus.PAID]: [BillingStatus.REFUNDED],
+  [BillingStatus.CREDITED]: [BillingStatus.PAID],
   [BillingStatus.REFUNDED]: [],
 };
 

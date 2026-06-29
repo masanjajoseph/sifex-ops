@@ -5,7 +5,6 @@ import { AppError } from "@/lib/errors";
 
 export interface ShipmentScanRecord {
   id: string;
-  organizationId: string;
   eventType: string;
   barcode: string;
   houseAWBId: string | null;

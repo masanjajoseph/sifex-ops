@@ -17,12 +17,10 @@ export interface CustomsDeclarationInput {
     hsCode: string;
   }>;
   userId: string;
-  organizationId: string;
 }
 
 export interface CustomsDeclarationData {
   id: string;
-  organizationId: string;
   houseAWBId?: string;
   masterAWBId?: string;
   declarationNumber: string;
@@ -65,7 +63,6 @@ export class CustomsService {
 
     const declaration: CustomsDeclarationData = {
       id: crypto.randomUUID(),
-      organizationId: input.organizationId,
       houseAWBId: input.houseAWBId,
       masterAWBId: input.masterAWBId,
       declarationNumber: CustomsService.generateDeclarationNumber(input.declarationType),

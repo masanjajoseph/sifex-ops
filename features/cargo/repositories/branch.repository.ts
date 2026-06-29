@@ -4,7 +4,6 @@ export interface BranchRecord {
   id: string;
   name: string;
   code: string;
-  organizationId: string;
   address: string | null;
   city: string | null;
   country: string | null;
@@ -20,7 +19,6 @@ export class BranchRepository {
   async create(data: {
     name: string;
     code: string;
-    organizationId: string;
     address?: string;
     city?: string;
     country?: string;
@@ -31,7 +29,6 @@ export class BranchRepository {
       data: {
         name: data.name,
         code: data.code,
-        organizationId: data.organizationId,
         address: data.address,
         city: data.city,
         country: data.country,
@@ -49,15 +46,6 @@ export class BranchRepository {
     });
 
     return record as unknown as BranchRecord | null;
-  }
-
-  async findByOrganization(organizationId: string): Promise<BranchRecord[]> {
-    const records = await prisma.branch.findMany({
-      where: { organizationId, deletedAt: null, isActive: true },
-      orderBy: { name: "asc" },
-    });
-
-    return records as unknown as BranchRecord[];
   }
 
   async update(

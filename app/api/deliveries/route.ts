@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -19,7 +19,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const riderId = searchParams.get("riderId") || undefined;
 
   const where: Record<string, unknown> = {
-    organizationId: session.user.organizationId,
+    
     deletedAt: null,
   };
   if (status) where.status = status;
@@ -28,7 +28,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const [items, total] = await Promise.all([
     prisma.deliveryAssignment.findMany({
       where: where as any,
-      include: { rider: { include: { user: true } } },
+      include: { rider: { include: { user: true } }, houseAWB: { select: { houseAWBNumber: true, trackingNumber: true, pieces: true, cargoStatus: true } } },
       skip: (page - 1) * limit,
       take: limit,
       orderBy: { createdAt: "desc" },
@@ -41,7 +41,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
 
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -57,7 +57,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
   const delivery = await prisma.deliveryAssignment.create({
     data: {
-      organizationId: session.user.organizationId,
+      
       houseAWBId: body.houseAWBId,
       masterAWBId: body.masterAWBId,
       riderId: body.riderId,

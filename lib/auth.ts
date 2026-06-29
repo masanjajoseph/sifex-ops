@@ -1,6 +1,8 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
+import { getToken } from "next-auth/jwt";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { compare } from "bcryptjs";
 import { z } from "zod";
@@ -10,14 +12,15 @@ const loginSchema = z.object({
   password: z.string().min(6),
 });
 
-const { handlers: nextHandlers, signIn, signOut, auth: nextAuth } = NextAuth({
+const { handlers: nextHandlers, signIn, signOut } = NextAuth({
+  secret: process.env.AUTH_SECRET,
   adapter: PrismaAdapter(prisma),
   session: {
     strategy: "jwt",
     maxAge: 8 * 60 * 60, // 8 hours
   },
   pages: {
-    signIn: "/auth/login",
+    signIn: "/login",
     error: "/auth/error",
   },
   providers: [
@@ -64,13 +67,11 @@ const { handlers: nextHandlers, signIn, signOut, auth: nextAuth } = NextAuth({
         const isValid = await compare(password, user.password);
         if (!isValid) return null;
 
-        // Update last login
         await prisma.user.update({
           where: { id: user.id },
           data: { lastLoginAt: new Date() },
         });
 
-        // Extract roles and permissions
         const roles = user.userRoles.map((ur) => ur.role.code);
         const permissions = user.userRoles.flatMap((ur) =>
           ur.role.rolePermissions.map((rp) => rp.permission.code)
@@ -83,7 +84,6 @@ const { handlers: nextHandlers, signIn, signOut, auth: nextAuth } = NextAuth({
           name: `${user.firstName} ${user.lastName}`,
           roles,
           permissions,
-          organizationId: user.organizationId,
           branchId: user.branchId,
           departmentId: user.departmentId,
           stations,
@@ -97,7 +97,6 @@ const { handlers: nextHandlers, signIn, signOut, auth: nextAuth } = NextAuth({
         token.id = user.id;
         token.roles = user.roles;
         token.permissions = user.permissions;
-        token.organizationId = user.organizationId;
         token.branchId = user.branchId;
         token.departmentId = user.departmentId;
         token.stations = user.stations;
@@ -109,7 +108,6 @@ const { handlers: nextHandlers, signIn, signOut, auth: nextAuth } = NextAuth({
         session.user.id = token.id as string;
         session.user.roles = token.roles as string[];
         session.user.permissions = token.permissions as string[];
-        session.user.organizationId = token.organizationId as string | null;
         session.user.branchId = token.branchId as string | null;
         session.user.departmentId = token.departmentId as string | null;
         session.user.stations = token.stations as string[];
@@ -124,23 +122,37 @@ export const handlers = nextHandlers;
 export { signIn, signOut };
 
 export async function auth() {
-  const session = await nextAuth();
-  if (session) return session;
-  if (process.env.NODE_ENV === 'development') {
+  try {
+    const cookieStore = await cookies();
+    const allCookies = cookieStore.getAll();
+    const cookieString = allCookies
+      .map((c) => `${c.name}=${c.value}`)
+      .join("; ");
+    const reqHeaders = new Headers({ cookie: cookieString });
+
+    const token = await getToken({
+      req: { headers: reqHeaders } as any,
+      secret: process.env.AUTH_SECRET,
+    });
+
+    if (!token) return null;
+
     return {
       user: {
-        id: 'dev-user',
-        email: 'admin@sifex.com',
-        name: 'Dev User',
-        roles: ['SUPER_ADMIN'],
-        permissions: [] as string[],
-        organizationId: '00000000-0000-0000-0000-000000000000',
-        branchId: null as string | null,
-        departmentId: null as string | null,
-        stations: [] as string[],
+        id: (token.id as string) ?? (token.sub as string),
+        name: token.name as string,
+        email: token.email as string,
+        roles: token.roles as string[],
+        permissions: token.permissions as string[],
+        branchId: token.branchId as string | null,
+        departmentId: token.departmentId as string | null,
+        stations: token.stations as string[],
       },
-      expires: new Date(Date.now() + 86400000).toISOString(),
-    } as any;
+      expires: new Date(
+        Date.now() + 8 * 60 * 60 * 1000
+      ).toISOString(),
+    };
+  } catch {
+    return null;
   }
-  return null;
 }

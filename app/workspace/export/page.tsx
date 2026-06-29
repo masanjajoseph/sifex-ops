@@ -67,7 +67,7 @@ export default function ExportPage() {
   const fetchExports = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), limit: '20' });
+      const params = new URLSearchParams({ page: String(page), limit: '20', scope: 'export' });
       if (search) params.set('search', search);
       if (statusFilter !== 'all') params.set('status', statusFilter);
       const res = await fetch(`/api/master-awbs?${params}`);

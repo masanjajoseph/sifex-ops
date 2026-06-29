@@ -12,7 +12,6 @@ export class MasterAWBAggregate {
   static create(command: CreateMasterAWBCommand): MasterAWBAggregate {
     const state: MasterAWBAggregateState = {
       id: crypto.randomUUID(),
-      organizationId: command.organizationId,
       originStationId: command.originStationId,
       destinationStationId: command.destinationStationId,
       status: MasterAWBStatus.CREATED,

@@ -1,18 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { FileSpreadsheet, RefreshCw, Plus } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/button';
 
-const mockManifests = [
-  { id: 'MFT-001', flight: 'SX-452', origin: 'DAR', destination: 'NBO', status: 'CREATED' as const, items: 45, created: '2026-05-26' },
-  { id: 'MFT-002', flight: 'SX-891', origin: 'NBO', destination: 'DXB', status: 'CONFIRMED' as const, items: 32, created: '2026-05-26' },
-  { id: 'MFT-003', flight: 'SX-334', origin: 'DAR', destination: 'ADD', status: 'LOADED' as const, items: 78, created: '2026-05-25' },
-];
+interface ManifestItem {
+  id: string;
+  manifestNumber: string;
+  manifestType: string;
+  flightId: string;
+  status: string;
+  totalPieces: number;
+  totalWeight: number;
+  createdAt: string;
+}
 
 const statusVariant = (s: string) => {
   switch (s) {
@@ -24,7 +30,29 @@ const statusVariant = (s: string) => {
 };
 
 export default function ManifestsPage() {
-  const [manifests] = useState(mockManifests);
+  const [data, setData] = useState<ManifestItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/manifests?limit=50');
+      if (res.ok) {
+        const json = await res.json();
+        setData(json.data || []);
+      }
+    } catch {} finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const stats = useMemo(() => ({
+    total: data.length,
+    totalItems: data.reduce((a, m) => a + m.totalPieces, 0),
+    loaded: data.filter((m) => m.status === 'LOADED').length,
+  }), [data]);
 
   return (
     <div className="space-y-6">
@@ -34,7 +62,7 @@ export default function ManifestsPage() {
         breadcrumbs={[{ label: 'Workspace', href: '/workspace' }, { label: 'Manifests' }]}
         action={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={fetchData}>
               <RefreshCw className="mr-1 h-4 w-4" /> Refresh
             </Button>
             <Button size="sm">
@@ -45,12 +73,18 @@ export default function ManifestsPage() {
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Active Manifests" value={manifests.length} icon={<FileSpreadsheet className="h-5 w-5" />} />
-        <StatCard label="Total Items" value={manifests.reduce((a, m) => a + m.items, 0)} icon={<FileSpreadsheet className="h-5 w-5" />} />
-        <StatCard label="Loaded Today" value={manifests.filter(m => m.status === 'LOADED').length} icon={<FileSpreadsheet className="h-5 w-5" />} />
+        <StatCard label="Active Manifests" value={stats.total} icon={<FileSpreadsheet className="h-5 w-5" />} />
+        <StatCard label="Total Items" value={stats.totalItems} icon={<FileSpreadsheet className="h-5 w-5" />} />
+        <StatCard label="Loaded Today" value={stats.loaded} icon={<FileSpreadsheet className="h-5 w-5" />} />
       </div>
 
-      {manifests.length === 0 ? (
+      {loading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
+      ) : data.length === 0 ? (
         <EmptyState
           icon={<FileSpreadsheet className="h-12 w-12" />}
           title="No manifests yet"
@@ -63,14 +97,14 @@ export default function ManifestsPage() {
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">All Manifests</h2>
           </div>
           <div className="divide-y divide-gray-100 dark:divide-gray-800">
-            {manifests.map((m) => (
+            {data.map((m) => (
               <div key={m.id} className="flex items-center justify-between px-5 py-3">
                 <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">{m.id}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{m.flight} · {m.origin} → {m.destination} · {m.items} items</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{m.manifestNumber}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{m.manifestType} · {m.totalPieces} items · {m.totalWeight} kg</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-xs text-gray-400">{m.created}</span>
+                  <span className="text-xs text-gray-400">{new Date(m.createdAt).toLocaleDateString()}</span>
                   <StatusBadge status={statusVariant(m.status)} label={m.status} />
                 </div>
               </div>

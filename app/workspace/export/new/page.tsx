@@ -1,17 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Plane, Package, Weight, DollarSign, X, Plus, ChevronDown, ChevronRight, Ship, UserSquare2, CheckCircle2, AlertCircle,
+  Plane, Package, Weight, DollarSign, X, Plus, ChevronDown, ChevronRight, Ship, UserSquare2, CheckCircle2, AlertCircle, Trash2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { DatePicker } from '@/components/ui/date-picker';
+import { TimePicker } from '@/components/ui/TimePicker';
 import { cn } from '@/lib/utils';
-
 interface SenderReceiver {
   name: string; company: string; phone: string; address: string; city: string; country: string;
 }
@@ -45,29 +45,11 @@ const createHawb = (): HAWBEntry => ({
   chargeableWeight: 0, freightRate: 0, freightAmount: 0,
 });
 
+const DRAFT_KEY = 'sifex_new_export_draft';
+
 const calcVw = (l: number, w: number, h: number) => Math.round((l * w * h) / 6000);
 
-const stationOptions = [
-  { value: 'CAN', label: 'CAN - Guangzhou' },
-  { value: 'HKG', label: 'HKG - Hong Kong' },
-  { value: 'DAR', label: 'DAR - Dar es Salaam' },
-  { value: 'DXB', label: 'DXB - Dubai' },
-  { value: 'NBO', label: 'NBO - Nairobi' },
-  { value: 'SHJ', label: 'SHJ - Sharjah' },
-  { value: 'JNB', label: 'JNB - Johannesburg' },
-  { value: 'MCT', label: 'MCT - Muscat' },
-  { value: 'BOM', label: 'BOM - Mumbai' },
-  { value: 'ADD', label: 'ADD - Addis Ababa' },
-  { value: 'ZNZ', label: 'ZNZ - Zanzibar' },
-];
-
-const awbTypeOptions = [
-  { value: 'CAN_GUANGZHOU', label: 'CAN - Guangzhou' },
-  { value: 'HKG_HONGKONG', label: 'HKG - Hong Kong' },
-  { value: 'DXB_DUBAI', label: 'DXB - Dubai' },
-  { value: 'CAN_EXPRESS', label: 'CAN - Express' },
-  { value: 'MCO_EXPRESS', label: 'MCO - Express' },
-];
+const emptySr = (): SenderReceiver => ({ name: '', company: '', phone: '', address: '', city: '', country: '' });
 
 export default function NewExportPage() {
   const router = useRouter();
@@ -76,12 +58,82 @@ export default function NewExportPage() {
   const [flightNumber, setFlightNumber] = useState('');
   const [originStation, setOriginStation] = useState('');
   const [destinationStation, setDestinationStation] = useState('');
+  const [departureDate, setDepartureDate] = useState(new Date().toISOString().slice(0, 10));
+  const [departureTime, setDepartureTime] = useState('12:00');
   const [hawbs, setHawbs] = useState<HAWBEntry[]>([createHawb()]);
   const [expandedHawb, setExpandedHawb] = useState(hawbs[0].id);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [createdId, setCreatedId] = useState('');
+  const [stations, setStations] = useState<{ id: string; code: string; name: string }[]>([]);
+  const [awbTypes, setAwbTypes] = useState<{ code: string; name: string; label: string }[]>([]);
+  const [airlines, setAirlines] = useState<{ id: string; iataCode: string; name: string }[]>([]);
+
+  const [resumeDraft, setResumeDraft] = useState(false);
+  const [saving, setSaving] = useState<'saving' | 'saved' | null>(null);
+  const hasUserData = useRef(false);
+
+  useEffect(() => {
+    fetch('/api/stations').then(r => r.ok && r.json()).then(j => setStations(j?.data || [])).catch(() => {});
+    fetch('/api/awb-types').then(r => r.ok && r.json()).then(j => setAwbTypes(j?.data || [])).catch(() => {});
+    fetch('/api/airlines').then(r => r.ok && r.json()).then(j => setAirlines(j?.data || [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.hawbs?.length > 0 && parsed.hawbs.some((h: HAWBEntry) => h.sender.name || h.receiver.name)) {
+          setResumeDraft(true);
+        }
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (resumeDraft) return;
+    if (!hasUserData.current) {
+      const hasData = originStation || destinationStation || flightNumber || airlineId ||
+        hawbs.some(h => h.sender.name || h.receiver.name || h.description || h.parcels.some(p => p.description));
+      if (!hasData) return;
+      hasUserData.current = true;
+    }
+    setSaving('saving');
+    const timer = setTimeout(() => {
+      try {
+        const draft = { step, airlineId, flightNumber, originStation, destinationStation, hawbs, expandedHawb, departureDate, departureTime };
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      } catch {}
+      setSaving('saved');
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [step, airlineId, flightNumber, originStation, destinationStation, hawbs, expandedHawb, departureDate, departureTime, resumeDraft]);
+
+  const loadDraft = () => {
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setStep(parsed.step ?? 0);
+        setAirlineId(parsed.airlineId ?? '');
+        setFlightNumber(parsed.flightNumber ?? '');
+        setOriginStation(parsed.originStation ?? '');
+        setDestinationStation(parsed.destinationStation ?? '');
+        setDepartureDate(parsed.departureDate ?? new Date().toISOString().slice(0, 10));
+        setDepartureTime(parsed.departureTime ?? '12:00');
+        setHawbs(parsed.hawbs ?? [createHawb()]);
+        setExpandedHawb(parsed.expandedHawb ?? parsed.hawbs?.[0]?.id ?? '');
+      }
+    } catch {}
+    setResumeDraft(false);
+  };
+
+  const clearDraft = () => {
+    localStorage.removeItem(DRAFT_KEY);
+    setResumeDraft(false);
+  };
 
   const steps = ['Flight Info', 'House AWBs', 'Review'];
 
@@ -155,9 +207,9 @@ export default function NewExportPage() {
   };
 
   const canProceed = () => {
-    if (step === 0) return originStation && destinationStation && flightNumber;
+    if (step === 0) return originStation && destinationStation && flightNumber && departureDate;
     if (step === 1) return hawbs.some(h => h.sender.name && h.receiver.name && h.description && h.parcels.some(p => p.description && p.weight > 0));
-    return true;
+    return originStation && destinationStation && flightNumber && departureDate && hawbs.some(h => h.sender.name);
   };
 
   const renderField = (label: string, value: string | number, onChange: (v: string) => void, opts?: { type?: string; placeholder?: string; required?: boolean; className?: string }) => (
@@ -171,6 +223,13 @@ export default function NewExportPage() {
 
   const handleSubmit = async () => {
     setSubmitting(true); setError('');
+
+    if (!originStation || !destinationStation) {
+      setError('Please select both origin and destination stations.');
+      setSubmitting(false);
+      return;
+    }
+
     try {
       const mawbRes = await fetch('/api/master-awbs', {
         method: 'POST',
@@ -181,7 +240,7 @@ export default function NewExportPage() {
           destinationStationId: destinationStation,
           airlineId,
           flightNumber,
-          departureTime: undefined,
+          departureTime: `${departureDate}T${departureTime}:00`,
           arrivalTime: undefined,
           senderName: 'Sifex Logistics',
           senderAddress: '',
@@ -256,6 +315,7 @@ export default function NewExportPage() {
         }
       }
 
+      clearDraft();
       setSuccess(true);
       setCreatedId(masterAWBId);
     } catch (err) {
@@ -294,21 +354,60 @@ export default function NewExportPage() {
         }
       />
 
-      <div className="flex items-center gap-1 overflow-x-auto py-2">
-        {steps.map((s, i) => (
-          <div key={s} className="flex items-center gap-1">
-            <button
-              onClick={() => setStep(i)}
-              className={cn(
-                'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors whitespace-nowrap',
-                step === i ? 'bg-blue-600 text-white' : i < step ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
-              )}
-            >
-              {i < step ? '\u2713' : i + 1} {s}
-            </button>
-            {i < steps.length - 1 && <div className={cn('h-px w-4', i < step ? 'bg-green-400' : 'bg-gray-200 dark:bg-gray-700')} />}
+      {resumeDraft && (
+        <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/50 dark:bg-amber-950/30">
+          <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
+            <Package className="h-4 w-4 shrink-0" />
+            <span>Unsaved draft found — resume where you left off?</span>
           </div>
-        ))}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={clearDraft}>
+              <Trash2 className="mr-1 h-3 w-3" /> Discard
+            </Button>
+            <Button size="sm" onClick={loadDraft}>
+              Resume Draft
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {saving && !resumeDraft && (
+        <div className="flex items-center justify-end gap-1.5 text-xs text-gray-400 dark:text-gray-500">
+          {saving === 'saving' ? (
+            <>
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
+              Saving to draft...
+            </>
+          ) : (
+            <>
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              Draft saved
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center gap-1 overflow-x-auto py-2">
+        {steps.map((s, i) => {
+          const canVisit = i <= step || (i === step + 1 && canProceed());
+          return (
+            <div key={s} className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={!canVisit}
+                onClick={() => canVisit && setStep(i)}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors whitespace-nowrap',
+                  !canVisit && 'cursor-not-allowed opacity-50',
+                  step === i ? 'bg-blue-600 text-white' : i < step ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                )}
+              >
+                {i < step ? '\u2713' : i + 1} {s}
+              </button>
+              {i < steps.length - 1 && <div className={cn('h-px w-4', i < step ? 'bg-green-400' : 'bg-gray-200 dark:bg-gray-700')} />}
+            </div>
+          );
+        })}
       </div>
 
       {step === 0 && (
@@ -317,7 +416,17 @@ export default function NewExportPage() {
             <Plane className="h-4 w-4 text-blue-500" /> Flight & Route Information
           </h3>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            {renderField('Airline Code', airlineId, setAirlineId, { placeholder: 'e.g. KQ, ET, TK' })}
+            <div className="space-y-1">
+              <Label className="text-xs font-medium text-gray-700 dark:text-gray-300">Airline</Label>
+              <select
+                value={airlineId}
+                onChange={e => setAirlineId(e.target.value)}
+                className="flex h-8 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+              >
+                <option value="">Select airline</option>
+                {airlines.map(a => <option key={a.id} value={a.iataCode}>{a.iataCode} - {a.name}</option>)}
+              </select>
+            </div>
             {renderField('Flight Number', flightNumber, setFlightNumber, { required: true, placeholder: 'e.g. KQ-482' })}
             <div className="space-y-1">
               <Label className="text-xs font-medium text-gray-700 dark:text-gray-300">Origin Station <span className="ml-0.5 text-red-500">*</span></Label>
@@ -327,7 +436,7 @@ export default function NewExportPage() {
                 className="flex h-8 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
               >
                 <option value="">Select origin</option>
-                {stationOptions.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                {stations.map(s => <option key={s.id} value={s.id}>{s.code} - {s.name}</option>)}
               </select>
             </div>
             <div className="space-y-1">
@@ -338,8 +447,18 @@ export default function NewExportPage() {
                 className="flex h-8 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
               >
                 <option value="">Select destination</option>
-                {stationOptions.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                {stations.map(s => <option key={s.id} value={s.id}>{s.code} - {s.name}</option>)}
               </select>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label className="text-xs font-medium text-gray-700 dark:text-gray-300">Departure Date <span className="ml-0.5 text-red-500">*</span></Label>
+              <DatePicker value={departureDate} onChange={setDepartureDate} placeholder="Select departure date" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-medium text-gray-700 dark:text-gray-300">Departure Time</Label>
+              <TimePicker value={departureTime} onChange={setDepartureTime} />
             </div>
           </div>
         </div>
@@ -358,9 +477,9 @@ export default function NewExportPage() {
 
           {hawbs.map((hawb) => (
             <div key={hawb.id} className="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <button
+              <div
                 onClick={() => setExpandedHawb(expandedHawb === hawb.id ? '' : hawb.id)}
-                className="flex w-full items-center justify-between px-4 py-3 text-left"
+                className="flex w-full cursor-pointer items-center justify-between px-4 py-3 text-left"
               >
                 <div className="flex items-center gap-2">
                   {expandedHawb === hawb.id ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
@@ -371,12 +490,12 @@ export default function NewExportPage() {
                 <div className="flex items-center gap-2">
                   {hawb.freightAmount > 0 && <span className="text-xs font-medium text-green-600 dark:text-green-400">${hawb.freightAmount.toFixed(2)}</span>}
                   {hawbs.length > 1 && (
-                    <button onClick={(e) => { e.stopPropagation(); removeHawb(hawb.id); }} className="text-gray-400 hover:text-red-500">
+                    <button type="button" onClick={(e) => { e.stopPropagation(); removeHawb(hawb.id); }} className="text-gray-400 hover:text-red-500">
                       <X className="h-4 w-4" />
                     </button>
                   )}
                 </div>
-              </button>
+              </div>
 
               {expandedHawb === hawb.id && (
                 <div className="space-y-4 border-t border-gray-100 px-4 py-4 dark:border-gray-800">
@@ -420,7 +539,7 @@ export default function NewExportPage() {
                           className="flex h-8 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                         >
                           <option value="">Select type</option>
-                          {awbTypeOptions.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                          {awbTypes.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
                         </select>
                       </div>
                       <div className="space-y-1">
@@ -568,14 +687,20 @@ export default function NewExportPage() {
             <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
               <Plane className="h-4 w-4 text-blue-500" /> Flight Summary
             </h3>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-4">
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Airline / Flight</p>
                 <p className="text-sm font-medium text-gray-900 dark:text-white">{airlineId || '-'} {flightNumber}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Route</p>
-                <p className="text-sm font-medium text-gray-900 dark:text-white">{originStation} → {destinationStation}</p>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                  {stations.find(s => s.id === originStation)?.code || originStation} → {stations.find(s => s.id === destinationStation)?.code || destinationStation}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Departure</p>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">{departureDate} {departureTime}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">House AWBs</p>
@@ -643,7 +768,7 @@ export default function NewExportPage() {
           <Button type="button" onClick={() => setStep(step + 1)} disabled={!canProceed()}>Next</Button>
         ) : (
           <Button type="button" onClick={handleSubmit} disabled={submitting || !canProceed()}>
-            {submitting ? 'Creating...' : 'Create Consolidation'}
+            {submitting ? 'Creating...' : 'Create Export'}
           </Button>
         )}
       </div>

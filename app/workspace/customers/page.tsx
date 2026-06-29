@@ -1,26 +1,56 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Users, Search, RefreshCw, Plus } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-const mockCustomers = [
-  { id: '1', name: 'Tanzania Cargo Ltd', code: 'TCL-001', email: 'info@tzcargo.co.tz', status: 'ACTIVE' as const, shipments: 45 },
-  { id: '2', name: 'East African Logistics', code: 'EAL-002', email: 'ops@ealogistics.co.ke', status: 'ACTIVE' as const, shipments: 32 },
-  { id: '3', name: 'Global Trade Corp', code: 'GTC-003', email: 'shipping@globaltrade.com', status: 'PENDING' as const, shipments: 0 },
-];
+interface CustomerItem {
+  id: string;
+  name: string;
+  code: string;
+  email: string;
+  type: string;
+  isActive: boolean;
+  createdAt: string;
+}
 
 export default function CustomersPage() {
+  const [data, setData] = useState<CustomerItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
-  const filtered = mockCustomers.filter((c) =>
-    !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.code.toLowerCase().includes(search.toLowerCase())
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/customers?limit=100');
+      if (res.ok) {
+        const json = await res.json();
+        setData(json.data || []);
+      }
+    } catch {} finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const filtered = useMemo(
+    () => data.filter((c) =>
+      !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.code.toLowerCase().includes(search.toLowerCase())
+    ),
+    [data, search]
   );
+
+  const stats = useMemo(() => ({
+    total: data.length,
+    active: data.filter((c) => c.isActive).length,
+  }), [data]);
 
   return (
     <div className="space-y-6">
@@ -30,7 +60,7 @@ export default function CustomersPage() {
         breadcrumbs={[{ label: 'Workspace', href: '/workspace' }, { label: 'Customers' }]}
         action={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={fetchData}>
               <RefreshCw className="mr-1 h-4 w-4" /> Refresh
             </Button>
             <Button size="sm">
@@ -41,9 +71,9 @@ export default function CustomersPage() {
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Total Customers" value={mockCustomers.length} icon={<Users className="h-5 w-5" />} />
-        <StatCard label="Active Accounts" value={mockCustomers.filter(c => c.status === 'ACTIVE').length} icon={<Users className="h-5 w-5" />} />
-        <StatCard label="Total Shipments" value={mockCustomers.reduce((a, c) => a + c.shipments, 0)} icon={<Users className="h-5 w-5" />} />
+        <StatCard label="Total Customers" value={stats.total} icon={<Users className="h-5 w-5" />} />
+        <StatCard label="Active Accounts" value={stats.active} icon={<Users className="h-5 w-5" />} />
+        <StatCard label="Pending" value={stats.total - stats.active} icon={<Users className="h-5 w-5" />} />
       </div>
 
       <div className="relative flex-1">
@@ -56,12 +86,18 @@ export default function CustomersPage() {
         />
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon={<Users className="h-12 w-12" />}
-          title={mockCustomers.length === 0 ? 'No customers yet' : 'No results'}
+          title={data.length === 0 ? 'No customers yet' : 'No results'}
           description="Customer profiles will appear once created."
-          action={mockCustomers.length === 0 ? <Button><Plus className="mr-1 h-4 w-4" /> Add Customer</Button> : undefined}
+          action={data.length === 0 ? <Button><Plus className="mr-1 h-4 w-4" /> Add Customer</Button> : undefined}
         />
       ) : (
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
@@ -77,16 +113,10 @@ export default function CustomersPage() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-900 dark:text-white">{c.name}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{c.code} · {c.email}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{c.code} · {c.email || 'N/A'}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">{c.shipments} shipments</span>
-                  <StatusBadge
-                    status={c.status === 'ACTIVE' ? 'success' : 'pending'}
-                    label={c.status}
-                  />
-                </div>
+                <StatusBadge status={c.isActive ? 'success' : 'pending'} label={c.isActive ? 'ACTIVE' : 'INACTIVE'} />
               </div>
             ))}
           </div>

@@ -4,7 +4,6 @@ import { AppError } from "@/lib/errors";
 
 export interface TrackingEvent {
   id: string;
-  organizationId: string;
   entityType: string;
   entityId: string;
   eventType: string;
@@ -110,7 +109,6 @@ export class TrackingService {
   }
 
   async createTrackingEvent(params: {
-    organizationId: string;
     entityType: string;
     entityId: string;
     eventType: string;
@@ -125,7 +123,6 @@ export class TrackingService {
   }): Promise<void> {
     const now = new Date();
     const data = {
-      organizationId: params.organizationId,
       entityType: params.entityType,
       entityId: params.entityId,
       eventType: params.eventType,
@@ -164,7 +161,6 @@ export class TrackingService {
           version: 1,
           data: (params.metadata ?? {}) as any,
           metadata: {
-            organizationId: params.organizationId,
             title: params.title,
             status: params.status,
             userId: params.userId,

@@ -5,7 +5,6 @@ import { AppError } from "@/lib/errors";
 
 export interface CustomsDeclarationRecord {
   id: string;
-  organizationId: string;
   houseAWBId: string | null;
   masterAWBId: string | null;
   declarationNumber: string;
@@ -57,7 +56,6 @@ export class CustomsDeclarationRepository {
       page?: number;
       pageSize?: number;
       status?: string;
-      organizationId?: string;
       dateFrom?: Date;
       dateTo?: Date;
     } = {}
@@ -67,7 +65,6 @@ export class CustomsDeclarationRepository {
     };
 
     if (options.status) where.status = options.status;
-    if (options.organizationId) where.organizationId = options.organizationId;
     if (options.dateFrom || options.dateTo) {
       where.submittedAt = {};
       if (options.dateFrom) (where.submittedAt as Record<string, unknown>).gte = options.dateFrom;

@@ -9,8 +9,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
-  if (!orgId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -21,10 +20,13 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const houseAWBId = searchParams.get("houseAWBId") || undefined;
 
   const where: Record<string, unknown> = {
-    organizationId: orgId,
+    
     deletedAt: null,
   };
-  if (status) where.status = status;
+  if (status) {
+    const statuses = status.split(',').map(s => s.trim());
+    where.status = statuses.length === 1 ? statuses[0] : { in: statuses };
+  }
   if (houseAWBId) where.houseAWBId = houseAWBId;
 
   const [items, total] = await Promise.all([
@@ -33,7 +35,12 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
       skip: (page - 1) * limit,
       take: limit,
       orderBy: { createdAt: "desc" },
-      include: { billingCharges: true, payments: true },
+      include: {
+        billingCharges: true,
+        payments: true,
+        customer: { select: { name: true, phone: true } },
+        houseAWB: { select: { houseAWBNumber: true, masterAWB: { select: { awbNumber: true } } } },
+      },
     }),
     prisma.billingRecord.count({ where: where as any }),
   ]);
@@ -43,10 +50,9 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
 
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session || !session.user || !session.user.organizationId) {
+  if (!session || !session.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
-  const orgId = session.user.organizationId;
   const userId = session.user.id;
 
   const hasPerm = hasPermission(session, "BILLING:CREATE");
@@ -58,7 +64,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
   const result = await billingService.generateInvoice({
     houseAWBId: body.houseAWBId,
-    organizationId: orgId,
+    
     charges: body.charges || [],
     userId,
   });
@@ -73,7 +79,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   const record = await prisma.billingRecord.create({
     data: {
       id: data.id,
-      organizationId: data.organizationId,
+      createdById: session.user.id,
       houseAWBId: data.houseAWBId,
       status: data.status as any,
       totalAmount: data.totalAmount,

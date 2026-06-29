@@ -12,7 +12,6 @@ export class MasterAWBRepository {
       where: { id: state.id },
       create: {
         id: state.id,
-        organizationId: state.organizationId,
         originStationId: state.originStationId,
         destinationStationId: state.destinationStationId,
         cargoStatus: state.status as any,
@@ -52,7 +51,6 @@ export class MasterAWBRepository {
   }
 
   async findByOrganization(
-    organizationId: string,
     options: { page?: number; pageSize?: number; status?: string }
   ) {
     const where: Record<string, unknown> = {
@@ -97,7 +95,6 @@ export class MasterAWBRepository {
   private toState(record: any): MasterAWBAggregateState {
     return {
       id: record.id,
-      organizationId: record.organizationId,
       originStationId: record.originStationId,
       destinationStationId: record.destinationStationId,
       status: record.cargoStatus,

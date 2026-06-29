@@ -17,7 +17,6 @@ export class HouseAWBRepository {
         where: { id: state.id },
         create: {
           id: state.id,
-          organizationId: state.organizationId,
           masterAWBId: state.masterAWBId,
           cargoStatus: state.status as any,
           houseAWBNumber: state.houseAWBNumber,
@@ -131,11 +130,9 @@ export class HouseAWBRepository {
   }
 
   async findByOrganization(
-    organizationId: string,
     options: { page?: number; pageSize?: number; status?: string; masterAWBId?: string }
   ) {
     const where = {
-      organizationId,
       deletedAt: null,
       ...(options.status && { status: options.status }),
       ...(options.masterAWBId && { masterAWBId: options.masterAWBId }),
@@ -168,7 +165,6 @@ export class HouseAWBRepository {
   private toState(record: any): HouseAWBAggregateState {
     return {
       id: record.id,
-      organizationId: record.organizationId,
       masterAWBId: record.masterAWBId,
       status: record.status,
       houseAWBNumber: record.houseAWBNumber,

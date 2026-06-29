@@ -1,42 +1,38 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
-
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:3001",
-  process.env.NEXT_PUBLIC_APP_URL,
-].filter(Boolean) as string[];
-
-function addCorsHeaders(response: NextResponse, origin: string | null) {
-  if (origin && allowedOrigins.includes(origin)) {
-    response.headers.set("Access-Control-Allow-Origin", origin);
-    response.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-    response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
-    response.headers.set("Access-Control-Allow-Credentials", "true");
-    response.headers.set("Access-Control-Max-Age", "86400");
-  }
-  return response;
-}
+import { env } from "@/lib/env";
 
 export async function proxy(req: NextRequest) {
+  const start = Date.now();
   const { pathname } = req.nextUrl;
-  const origin = req.headers.get("origin");
-
-  // Handle preflight OPTIONS request
-  if (req.method === "OPTIONS") {
-    const response = new NextResponse(null, { status: 204 });
-    return addCorsHeaders(response, origin);
-  }
 
   const isRootPath = pathname === "/";
-  const isLoginPath = pathname === "/login" || pathname === "/(auth)/login";
-  const isWorkspaceRoute = pathname.startsWith("/workspace") || pathname.startsWith("/(workspace)");
-  const isApiAuthRoute = pathname.startsWith("/api/auth");
+  const isLoginPath = pathname.startsWith("/login");
+  const isWorkspaceRoute = pathname.startsWith("/workspace");
+  const isApiRoute = pathname.startsWith("/api");
+  const isStaticFile =
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/favicon.ico") ||
+    pathname.startsWith("/public") ||
+    pathname === "/logo.png";
 
-  // Always allow auth API routes
-  if (isApiAuthRoute) {
+  if (isStaticFile) {
+    return NextResponse.next();
+  }
+
+  if (isApiRoute && env.PROMETHEUS_ENABLED) {
+    const { apiRequestsTotal, httpRequestDuration } = await import("@/lib/monitoring/metrics");
     const response = NextResponse.next();
-    return addCorsHeaders(response, origin);
+    const duration = (Date.now() - start) / 1000;
+    const url = new URL(req.url);
+    const route = url.pathname.replace(/\/[^/]+$/, "/:id");
+    apiRequestsTotal.inc({ method: req.method, route, status: response.status });
+    httpRequestDuration.observe({ method: req.method, route, status: response.status }, duration);
+    return response;
+  }
+
+  if (isApiRoute) {
+    return NextResponse.next();
   }
 
   const token = await getToken({
@@ -46,27 +42,28 @@ export async function proxy(req: NextRequest) {
 
   const isLoggedIn = !!token;
 
-  // Root path: redirect based on auth status
   if (isRootPath) {
     if (isLoggedIn) {
-      return addCorsHeaders(NextResponse.redirect(new URL("/workspace", req.url)), origin);
+      return NextResponse.redirect(new URL("/workspace", req.url));
     }
-    return addCorsHeaders(NextResponse.redirect(new URL("/login", req.url)), origin);
+    return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  // Redirect unauthenticated users away from workspace
   if (isWorkspaceRoute && !isLoggedIn) {
-    return addCorsHeaders(NextResponse.redirect(new URL("/login", req.url)), origin);
+    const loginUrl = new URL("/login", req.url);
+    loginUrl.searchParams.set("callbackUrl", pathname);
+    return NextResponse.redirect(loginUrl);
   }
 
-  // Redirect authenticated users away from login
   if (isLoginPath && isLoggedIn) {
-    return addCorsHeaders(NextResponse.redirect(new URL("/workspace", req.url)), origin);
+    return NextResponse.redirect(new URL("/workspace", req.url));
   }
 
-  return addCorsHeaders(NextResponse.next(), origin);
+  return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|public).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|public|logo.png).*)",
+  ],
 };

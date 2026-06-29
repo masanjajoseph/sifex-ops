@@ -13,7 +13,7 @@ import {
   RowSelectionState,
   VisibilityState,
 } from '@tanstack/react-table';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   ChevronUp,
   ChevronDown,
@@ -120,14 +120,16 @@ export function DataTable<TData>({
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     onRowSelectionChange: (updater) => {
-      const newValue = typeof updater === 'function' ? updater(rowSelection) : updater;
-      setRowSelection(newValue);
-      if (onSelectedRowsChange) {
-        const selectedRows = Object.keys(newValue)
-          .filter((key) => newValue[key])
-          .map((key) => data[parseInt(key)]);
-        onSelectedRowsChange(selectedRows);
-      }
+      setRowSelection((prev) => {
+        const newValue = typeof updater === 'function' ? updater(prev) : updater;
+        if (onSelectedRowsChange) {
+          const selectedRows = Object.keys(newValue)
+            .filter((key) => newValue[key])
+            .map((key) => data[parseInt(key)]);
+          onSelectedRowsChange(selectedRows);
+        }
+        return newValue;
+      });
     },
     onColumnVisibilityChange: setColumnVisibility,
     state: {
@@ -141,7 +143,7 @@ export function DataTable<TData>({
     enableRowSelection: enableRowSelection,
   });
 
-  table.setPageSize(pageSizeLocal);
+  useEffect(() => { table.setPageSize(pageSizeLocal); }, [table, pageSizeLocal]);
 
   const selectedCount = Object.keys(rowSelection).filter((k) => rowSelection[k]).length;
 

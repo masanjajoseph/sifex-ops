@@ -27,7 +27,6 @@ export {
 
 export interface MasterAWBAggregateState {
   id: string;
-  organizationId: string;
   originStationId: string;
   destinationStationId: string;
   status: MasterAWBStatus;
@@ -62,7 +61,6 @@ export interface MasterAWBAggregateState {
 
 export interface HouseAWBAggregateState {
   id: string;
-  organizationId: string;
   masterAWBId?: string;
   status: HouseAWBStatus;
 
@@ -115,7 +113,6 @@ export interface ParcelState {
 // ============================================================================
 
 export interface CreateMasterAWBCommand {
-  organizationId: string;
   originStationId: string;
   destinationStationId: string;
   masterAWBNumber: string;
@@ -148,7 +145,6 @@ export interface DetachHouseAWBCommand {
 }
 
 export interface CreateHouseAWBCommand {
-  organizationId: string;
   shipperId: string;
   recipientId: string;
   hsCode: string;
@@ -176,7 +172,6 @@ export interface TransitionCommand {
   fromStatus: string;
   toStatus: string;
   userId: string;
-  organizationId: string;
   stationId?: string;
   metadata?: Record<string, unknown>;
 }
@@ -185,7 +180,6 @@ export interface ScanCommand {
   barcode: string;
   eventType: ScanEventType;
   userId: string;
-  organizationId: string;
   stationId?: string;
   location?: { latitude: number; longitude: number; address: string };
   metadata?: Record<string, unknown>;

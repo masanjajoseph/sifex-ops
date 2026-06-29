@@ -14,7 +14,9 @@ export enum CargoStatus {
   CUSTOMS_QUERY = "CUSTOMS_QUERY",
   CUSTOMS_HOLD = "CUSTOMS_HOLD",
   RELEASED = "RELEASED",
+  AWAITING_DELIVERY = "AWAITING_DELIVERY",
   OUT_FOR_DELIVERY = "OUT_FOR_DELIVERY",
+  PICKED_UP = "PICKED_UP",
   DELIVERED = "DELIVERED",
   POD_SIGNED = "POD_SIGNED",
   CANCELLED = "CANCELLED",
@@ -49,7 +51,16 @@ export enum StationCode {
 
 export enum BillingStatus {
   NOT_BILLED = "NOT_BILLED", DRAFT = "DRAFT", INVOICED = "INVOICED",
-  PARTIAL_PAID = "PARTIAL_PAID", PAID = "PAID", REFUNDED = "REFUNDED",
+  UNPAID = "UNPAID", PARTIAL_PAID = "PARTIAL_PAID", PAID = "PAID",
+  CREDITED = "CREDITED", REFUNDED = "REFUNDED",
+}
+
+export enum PaymentMethod {
+  CARD = "CARD",
+  MOBILE = "MOBILE",
+  LIPA_NAMBA = "LIPA_NAMBA",
+  BANK = "BANK",
+  CASH = "CASH",
 }
 
 export enum WarehouseStatus {
@@ -214,7 +225,6 @@ export enum ManifestStatus {
 
 export interface MasterAWB {
   id: string;
-  organizationId: string;
   awbNumber: string;
   trackingNumber: string;
   orderNumber?: string;
@@ -274,7 +284,6 @@ export interface MasterAWB {
 
 export interface HouseAWB {
   id: string;
-  organizationId: string;
   masterAWBId?: string;
   houseAWBNumber: string;
   trackingNumber: string;
@@ -303,6 +312,7 @@ export interface HouseAWB {
   cargoStatus: CargoStatus;
   warehouseStatus: WarehouseStatus;
   billingStatus: BillingStatus;
+  paymentMethod?: PaymentMethod;
   receivedAt?: Date;
   expectedArrivalDate?: Date;
   houseAWBBillingId?: string;
@@ -355,7 +365,6 @@ export interface WarehouseLocation {
 
 export interface FreightRate {
   id: string;
-  organizationId: string;
   shipmentType: ShipmentType;
   minimumWeight: number;
   maximumWeight: number;
@@ -368,11 +377,10 @@ export interface FreightRate {
 
 export interface TrackingEvent {
   id: string;
-  organizationId: string;
   entityType: string;
   entityId: string;
   eventType: string;
-  status: CargoStatus;
+  status: string;
   title: string;
   description?: string;
   userId: string;
@@ -389,7 +397,6 @@ export interface TrackingEvent {
 
 export interface SystemSettings {
   id: string;
-  organizationId: string;
   defaultCurrency: string;
   exchangeRate: number;
   taxPercentage: number;
@@ -403,7 +410,6 @@ export interface SystemSettings {
 
 export interface Customer {
   id: string;
-  organizationId: string;
   type: string;
   name: string;
   code: string;
@@ -428,7 +434,6 @@ export interface Customer {
 
 export interface QuotationRequest {
   id: string;
-  organizationId: string;
   customerId: string;
   quoteNumber: string;
   status: string;
@@ -498,7 +503,7 @@ export const TrackingEventCreateSchema = z.object({
   entityType: z.string().min(1),
   entityId: z.string().uuid(),
   eventType: z.string().min(1),
-  status: z.nativeEnum(CargoStatus),
+  status: z.string(),
   title: z.string().min(1),
   description: z.string().optional(),
   userId: z.string().uuid(),

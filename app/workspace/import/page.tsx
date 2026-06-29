@@ -1,31 +1,60 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { PackageOpen, RefreshCw } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/button';
 
-const mockImports = [
-  { id: 'IMP-001', origin: 'CAN', pieces: 120, weight: 850, status: 'UNDER_CLEARANCE' as const, date: '2026-05-26' },
-  { id: 'IMP-002', origin: 'DXB', pieces: 34, weight: 210, status: 'ARRIVED' as const, date: '2026-05-25' },
-  { id: 'IMP-003', origin: 'NBO', pieces: 56, weight: 430, status: 'RELEASED' as const, date: '2026-05-24' },
-];
+interface ImportItem {
+  id: string;
+  awbNumber: string;
+  cargoStatus: string;
+  awbPieces: number;
+  awbWeight: number;
+  originStationId: string;
+  destinationStationId: string;
+  createdAt: string;
+}
+
+const statusVariant = (s: string) => {
+  switch (s) {
+    case 'RELEASED': case 'DELIVERED': case 'POD_SIGNED': return 'success' as const;
+    case 'ARRIVED': case 'IN_TRANSIT': return 'info' as const;
+    case 'UNDER_CLEARANCE': return 'warning' as const;
+    case 'CUSTOMS_HOLD': case 'CUSTOMS_QUERY': return 'error' as const;
+    default: return 'pending' as const;
+  }
+};
 
 export default function ImportPage() {
-  const [imports] = useState(mockImports);
+  const [data, setData] = useState<ImportItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const statusVariant = (s: string) => {
-    switch (s) {
-      case 'RELEASED': case 'DELIVERED': return 'success' as const;
-      case 'ARRIVED': case 'IN_TRANSIT': return 'info' as const;
-      case 'UNDER_CLEARANCE': return 'warning' as const;
-      case 'CUSTOMS_HOLD': return 'error' as const;
-      default: return 'pending' as const;
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/master-awbs?limit=50&scope=import');
+      if (res.ok) {
+        const json = await res.json();
+        setData(json.data || []);
+      }
+    } catch {} finally {
+      setLoading(false);
     }
   };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const stats = useMemo(() => ({
+    active: data.length,
+    underClearance: data.filter((i) => i.cargoStatus === 'UNDER_CLEARANCE').length,
+    released: data.filter((i) => i.cargoStatus === 'RELEASED').length,
+    totalWeight: data.reduce((a, i) => a + i.awbWeight, 0),
+  }), [data]);
 
   return (
     <div className="space-y-6">
@@ -34,20 +63,26 @@ export default function ImportPage() {
         description="Handle import clearance, processing, and inbound logistics"
         breadcrumbs={[{ label: 'Workspace', href: '/workspace' }, { label: 'Import Operations' }]}
         action={
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={fetchData}>
             <RefreshCw className="mr-1 h-4 w-4" /> Refresh
           </Button>
         }
       />
 
       <div className="grid gap-4 sm:grid-cols-4">
-        <StatCard label="Active Imports" value={imports.length} icon={<PackageOpen className="h-5 w-5" />} />
-        <StatCard label="Under Clearance" value={imports.filter(i => i.status === 'UNDER_CLEARANCE').length} icon={<PackageOpen className="h-5 w-5" />} />
-        <StatCard label="Released" value={imports.filter(i => i.status === 'RELEASED').length} icon={<PackageOpen className="h-5 w-5" />} />
-        <StatCard label="Total Weight" value={`${imports.reduce((a, i) => a + i.weight, 0)} kg`} icon={<PackageOpen className="h-5 w-5" />} />
+        <StatCard label="Active Imports" value={stats.active} icon={<PackageOpen className="h-5 w-5" />} />
+        <StatCard label="Under Clearance" value={stats.underClearance} icon={<PackageOpen className="h-5 w-5" />} />
+        <StatCard label="Released" value={stats.released} icon={<PackageOpen className="h-5 w-5" />} />
+        <StatCard label="Total Weight" value={`${Math.round(stats.totalWeight)} kg`} icon={<PackageOpen className="h-5 w-5" />} />
       </div>
 
-      {imports.length === 0 ? (
+      {loading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
+      ) : data.length === 0 ? (
         <EmptyState
           icon={<PackageOpen className="h-12 w-12" />}
           title="No import shipments"
@@ -59,15 +94,15 @@ export default function ImportPage() {
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Import Shipments</h2>
           </div>
           <div className="divide-y divide-gray-100 dark:divide-gray-800">
-            {imports.map((i) => (
+            {data.map((i) => (
               <div key={i.id} className="flex items-center justify-between px-5 py-3">
                 <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">{i.id}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{i.origin} → DAR · {i.pieces} pcs · {i.weight} kg</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{i.awbNumber}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{i.originStationId} → {i.destinationStationId} · {i.awbPieces} pcs · {i.awbWeight} kg</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-xs text-gray-400">{i.date}</span>
-                  <StatusBadge status={statusVariant(i.status)} label={i.status.replace(/_/g, ' ')} />
+                  <span className="text-xs text-gray-400">{new Date(i.createdAt).toLocaleDateString()}</span>
+                  <StatusBadge status={statusVariant(i.cargoStatus)} label={i.cargoStatus.replace(/_/g, ' ')} />
                 </div>
               </div>
             ))}

@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -21,7 +21,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const dateTo = searchParams.get("dateTo") || undefined;
 
   const where: Record<string, unknown> = {
-    organizationId: session.user.organizationId,
+    
     deletedAt: null,
   };
   if (status) where.status = status;
@@ -47,7 +47,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
 
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -57,7 +57,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
   const body = await req.json();
   const result = await customsService.submitDeclaration({
-    organizationId: session.user.organizationId,
+    
     houseAWBId: body.houseAWBId,
     masterAWBId: body.masterAWBId,
     declarationType: body.declarationType,

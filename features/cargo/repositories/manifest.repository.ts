@@ -4,7 +4,6 @@ import { paginate } from "@/lib/db-helpers";
 
 export interface ManifestRecord {
   id: string;
-  organizationId: string;
   flightId: string;
   manifestNumber: string;
   manifestType: "EXPORT" | "IMPORT";
@@ -68,11 +67,9 @@ export class ManifestRepository {
   }
 
   async findByOrganization(
-    organizationId: string,
     options: { page?: number; pageSize?: number; status?: string }
   ) {
     const where: Prisma.ManifestWhereInput = {
-      organizationId,
       deletedAt: null,
     };
 

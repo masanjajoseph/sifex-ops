@@ -301,6 +301,21 @@ export const SYSTEM_MODULES: ModuleDefinition[] = [
     },
   },
   {
+    id: "tcra",
+    name: "TCRA Monitor",
+    description: "TCRA integration event monitoring",
+    icon: "Shield",
+    path: "/workspace/tcra",
+    color: "bg-red-600",
+    category: ModuleCategory.SYSTEM,
+    requiredPermissions: ["tcra.view"],
+    mobileVisible: false,
+    sidebarConfig: {
+      order: 20,
+      group: "System",
+    },
+  },
+  {
     id: "users",
     name: "User Management",
     description: "User accounts, roles, and permissions",

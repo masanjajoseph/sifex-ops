@@ -4,7 +4,6 @@ import { CargoEventType } from "@/types/cargo-domain";
 import { shipmentTimelineService } from "./shipment-timeline.service";
 
 export interface AssignDeliveryParams {
-  organizationId: string;
   riderId: string;
   houseAWBId?: string;
   masterAWBId?: string;
@@ -21,7 +20,6 @@ const ACTIVE_STATUSES = ["ASSIGNED", "PICKED_UP", "IN_TRANSIT"];
 export class DeliveryService {
   async assignDelivery(params: AssignDeliveryParams) {
     const assignment = await deliveryAssignmentRepository.create({
-      organizationId: params.organizationId,
       riderId: params.riderId,
       houseAWBId: params.houseAWBId,
       masterAWBId: params.masterAWBId,
@@ -163,9 +161,7 @@ export class DeliveryService {
     return deliveryAssignmentRepository.findByRider(riderId, { status });
   }
 
-  async getActiveDeliveries(organizationId: string) {
-    return deliveryAssignmentRepository.findByOrganization(organizationId, ACTIVE_STATUSES);
-  }
+
 }
 
 export const deliveryService = new DeliveryService();

@@ -4,7 +4,6 @@ import { shipmentTimelineService } from "./shipment-timeline.service";
 import { MasterAWBStatus, HouseAWBStatus } from "@/types/cargo-domain";
 
 export interface CargoSearchQuery {
-  organizationId: string;
   status?: string;
   search?: string;
   page?: number;
@@ -24,7 +23,7 @@ export interface CargoSummary {
 
 export class CargoQueryService {
   async searchMasterAWBs(query: CargoSearchQuery) {
-    return masterAWBRepository.findByOrganization(query.organizationId, {
+    return masterAWBRepository.findByOrganization({
       page: query.page,
       pageSize: query.pageSize,
       status: query.status,
@@ -32,7 +31,7 @@ export class CargoQueryService {
   }
 
   async searchHouseAWBs(query: CargoSearchQuery) {
-    return houseAWBRepository.findByOrganization(query.organizationId, {
+    return houseAWBRepository.findByOrganization({
       page: query.page,
       pageSize: query.pageSize,
       status: query.status,
@@ -85,8 +84,7 @@ export class CargoQueryService {
   }
 
   async trackByReference(
-    reference: string,
-    organizationId: string
+    reference: string
   ) {
     // Try tracking number first
     const byTracking = await houseAWBRepository.findByTrackingNumber(reference);
@@ -99,12 +97,10 @@ export class CargoQueryService {
     return null;
   }
 
-  async getDashboardSummary(
-    organizationId: string
-  ): Promise<CargoSummary> {
+  async getDashboardSummary(): Promise<CargoSummary> {
     const [mawbResult, hawbResult] = await Promise.all([
-      masterAWBRepository.findByOrganization(organizationId, { pageSize: 1 }),
-      houseAWBRepository.findByOrganization(organizationId, { pageSize: 1 }),
+      masterAWBRepository.findByOrganization({ pageSize: 1 }),
+      houseAWBRepository.findByOrganization({ pageSize: 1 }),
     ]);
 
     return {

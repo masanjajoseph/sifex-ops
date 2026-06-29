@@ -14,7 +14,7 @@ function generateTrackingNumber(prefix: string, orgCode: string): string {
 
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -25,7 +25,6 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   }
 
   const data = parsed.data;
-  const orgId = session.user.organizationId!;
   const totalPieces = data.parcels.reduce((sum, p) => sum + p.quantity, 0);
   const totalWeight = data.parcels.reduce((sum, p) => sum + p.actualWeight, 0);
   const totalVolume = data.parcels.reduce((sum, p) => {
@@ -34,9 +33,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   }, 0);
   const chargeableWeight = Math.max(totalWeight, totalVolume / 6000);
 
-  const orgSettings = await prisma.systemSettings.findUnique({
-    where: { organizationId: orgId },
-  });
+  const orgSettings = await prisma.systemSettings.findFirst();
   const trackingPrefix = orgSettings?.trackingPrefix || "SFX";
 
   const houseAWBNumber = generateTrackingNumber("HAWB", trackingPrefix);
@@ -45,7 +42,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   const result = await prisma.$transaction(async (tx) => {
     const shipper = await tx.customer.create({
       data: {
-        organizationId: orgId,
+        
         name: data.sender.name,
         code: `S-${trackingPrefix}-${Date.now()}`,
         type: "COMPANY",
@@ -59,7 +56,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
     const receiver = await tx.customer.create({
       data: {
-        organizationId: orgId,
+        
         name: data.receiver.name,
         code: `R-${trackingPrefix}-${Date.now()}`,
         type: "COMPANY",
@@ -73,7 +70,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
     const masterAWB = await tx.masterAWB.create({
       data: {
-        organizationId: orgId,
+        
         awbNumber: masterAWBNumber,
         trackingNumber: generateTrackingNumber("MTRK", trackingPrefix),
         shipmentType: data.shipmentType,
@@ -115,7 +112,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
     const houseAWB = await tx.houseAWB.create({
       data: {
-        organizationId: orgId,
+        
         masterAWBId: masterAWB.id,
         houseAWBNumber: houseAWBNumber,
         trackingNumber: generateTrackingNumber("HTRK", trackingPrefix),
@@ -170,7 +167,6 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     await tx.trackingEvent.createMany({
       data: [
         {
-          organizationId:     orgId,
           entityType: "MasterAWB",
           entityId: masterAWB.id,
           eventType: "ACCEPTED",
@@ -181,7 +177,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
           createdAt: now,
         },
         {
-          organizationId: orgId,
+          
           entityType: "HouseAWB",
           entityId: houseAWB.id,
           eventType: "ACCEPTED",

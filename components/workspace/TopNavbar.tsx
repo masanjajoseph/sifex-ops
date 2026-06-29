@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import {
   Bell,
   Search,
@@ -9,16 +9,11 @@ import {
   LogOut,
   Settings,
   User,
-  Menu,
 } from "lucide-react";
 import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
-interface TopNavbarProps {
-  onMenuToggle: () => void;
-}
-
-export function TopNavbar({ onMenuToggle }: TopNavbarProps) {
+export function TopNavbar() {
   const { data: session } = useSession();
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -32,15 +27,6 @@ export function TopNavbar({ onMenuToggle }: TopNavbarProps) {
 
   return (
     <header className="h-14 flex items-center gap-3 px-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shrink-0 z-30">
-      {/* Mobile menu toggle */}
-      <button
-        onClick={onMenuToggle}
-        className="lg:hidden p-1.5 rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-        aria-label="Toggle menu"
-      >
-        <Menu className="w-5 h-5" />
-      </button>
-
       {/* Logo */}
       <a href="/workspace" className="flex items-center shrink-0">
         <Image
@@ -129,7 +115,7 @@ export function TopNavbar({ onMenuToggle }: TopNavbarProps) {
               </a>
               <div className="border-t border-gray-100 dark:border-gray-800 mt-1 pt-1">
                 <button
-                  onClick={() => signOut({ callbackUrl: "/auth/login" })}
+                  onClick={() => window.location.href = '/api/signout'}
                   className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950"
                 >
                   <LogOut className="w-4 h-4" /> Sign out

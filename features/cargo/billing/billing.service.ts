@@ -13,7 +13,6 @@ export interface BillingChargeInput {
 export interface BillingRecordData {
   id: string;
   houseAWBId: string;
-  organizationId: string;
   status: BillingStatus;
   charges: BillingChargeInput[];
   totalAmount: number;
@@ -87,7 +86,6 @@ export class BillingService {
 
   async generateInvoice(params: {
     houseAWBId: string;
-    organizationId: string;
     charges: BillingChargeInput[];
     userId: string;
   }): Promise<BillingRecordData | { errors: string[] }> {
@@ -96,7 +94,6 @@ export class BillingService {
     const record: BillingRecordData = {
       id: crypto.randomUUID(),
       houseAWBId: params.houseAWBId,
-      organizationId: params.organizationId,
       status: BillingStatus.NOT_BILLED,
       charges: params.charges,
       totalAmount,
@@ -156,10 +153,6 @@ export class BillingService {
       success: true,
       remainingAmount: newRemaining,
     };
-  }
-
-  async getOutstandingInvoices(organizationId: string): Promise<number> {
-    return 0;
   }
 }
 

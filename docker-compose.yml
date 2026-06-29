@@ -1,0 +1,87 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sifex_prod
+      POSTGRES_USER: sifex
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=3GB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_USER: sifex
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: sifex_prod
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "200"
+      DEFAULT_POOL_SIZE: "25"
+      RESERVE_POOL_SIZE: "5"
+      RESERVE_POOL_TIMEOUT: "3"
+    ports:
+      - "6543:5432"
+    depends_on:
+      - postgres
+
+  bullmq-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      DATABASE_URL: postgresql://sifex:${POSTGRES_PASSWORD}@pgbouncer:5432/sifex_prod
+      REDIS_URL: redis://redis:6379
+      JOB_PROCESSOR_ENABLED: "true"
+      NODE_ENV: production
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - pgbouncer
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 1G
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

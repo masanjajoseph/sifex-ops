@@ -22,6 +22,7 @@ export enum PermissionModule {
   FLIGHTS = "flights",
   MANIFESTS = "manifests",
   QUOTES = "quotes",
+  TCRA = "tcra",
 }
 
 export enum PermissionAction {
@@ -118,6 +119,12 @@ export const SYSTEM_PERMISSIONS: PermissionDefinition[] = [
     name: "Approve Invoices",
     module: PermissionModule.BILLING,
     description: "Can approve invoices",
+  },
+  {
+    code: "billing.payment",
+    name: "Record Payment",
+    module: PermissionModule.BILLING,
+    description: "Can record payments against invoices",
   },
   
   // Delivery
@@ -244,5 +251,19 @@ export const SYSTEM_PERMISSIONS: PermissionDefinition[] = [
     name: "Approve Quotes",
     module: PermissionModule.QUOTES,
     description: "Can approve freight quotes",
+  },
+
+  // TCRA Integration
+  {
+    code: "tcra.view",
+    name: "View TCRA Monitor",
+    module: PermissionModule.TCRA,
+    description: "Can view TCRA integration monitoring",
+  },
+  {
+    code: "tcra.retry",
+    name: "Retry TCRA Events",
+    module: PermissionModule.TCRA,
+    description: "Can retry failed TCRA events",
   },
 ];

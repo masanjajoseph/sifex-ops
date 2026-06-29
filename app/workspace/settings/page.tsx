@@ -9,29 +9,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-const stationOptions = [
-  { value: 'CAN', label: 'CAN - Guangzhou' },
-  { value: 'HKG', label: 'HKG - Hong Kong' },
-  { value: 'DAR', label: 'DAR - Dar es Salaam' },
-  { value: 'DXB', label: 'DXB - Dubai' },
-  { value: 'NBO', label: 'NBO - Nairobi' },
-  { value: 'SHJ', label: 'SHJ - Sharjah' },
-  { value: 'JNB', label: 'JNB - Johannesburg' },
-  { value: 'MCT', label: 'MCT - Muscat' },
-  { value: 'BOM', label: 'BOM - Mumbai' },
-  { value: 'ADD', label: 'ADD - Addis Ababa' },
-  { value: 'ZNZ', label: 'ZNZ - Zanzibar' },
-];
-
-const awbTypeOptions = [
-  { value: 'CAN_GUANGZHOU', label: 'CAN - Guangzhou' },
-  { value: 'HKG_HONGKONG', label: 'HKG - Hong Kong' },
-  { value: 'DXB_DUBAI', label: 'DXB - Dubai' },
-  { value: 'CAN_EXPRESS', label: 'CAN - Express' },
-  { value: 'MCO_EXPRESS', label: 'MCO - Express' },
-];
-
-const currencies = ['USD', 'EUR', 'GBP', 'TZS', 'KES', 'CNY', 'AED', 'ZAR', 'INR', 'ETB'];
+interface Station {
+  id: string;
+  code: string;
+  name: string;
+}
 
 interface ExchangeRate {
   id: string;
@@ -42,14 +24,14 @@ interface ExchangeRate {
 }
 
 interface FreightRate {
-  id: string;
+  id?: string;
   shipmentType: string;
   ratePerKg: number;
   currency: string;
   isActive: boolean;
 }
 
-const emptyFreightRate = () => ({
+const emptyFreightRate = (): FreightRate => ({
   shipmentType: '',
   ratePerKg: 0,
   currency: 'USD',
@@ -57,28 +39,59 @@ const emptyFreightRate = () => ({
 });
 
 export default function SettingsPage() {
+  const [stations, setStations] = useState<Station[]>([]);
+  const [awbTypes, setAwbTypes] = useState<{ code: string; name: string; label: string }[]>([]);
+  const [currencies, setCurrencies] = useState<{ code: string; name: string; symbol: string }[]>([]);
   const [settings, setSettings] = useState({
-    companyName: 'Sifex Air Cargo',
-    companyCode: 'SFX',
+    companyName: '',
+    companyCode: '',
     defaultCurrency: 'USD',
     defaultChargeableDivisor: '6000',
-    trackingPrefix: 'SFX',
+    trackingPrefix: '',
     autoGenerateTracking: true,
   });
 
-  // Exchange rates
   const [exCurrency, setExCurrency] = useState('TZS');
-  const [exRate, setExRate] = useState(12.0);
-  const [exExchangeRate, setExExchangeRate] = useState(2520.0);
+  const [exRate, setExRate] = useState(0);
+  const [exExchangeRate, setExExchangeRate] = useState(0);
   const [exSource, setExSource] = useState('manual');
   const [exSaved, setExSaved] = useState(false);
 
-  // Freight rates
   const [freightRates, setFreightRates] = useState<FreightRate[]>([]);
   const [showFrForm, setShowFrForm] = useState(false);
-  const [editingFr, setEditingFr] = useState<string | null>(null);
-  const [frForm, setFrForm] = useState(emptyFreightRate());
+  const [editingFr, setEditingFr] = useState<string | undefined>(undefined);
+  const [frForm, setFrForm] = useState<FreightRate>(emptyFreightRate());
   const [frSaving, setFrSaving] = useState(false);
+
+  const loadSettings = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings');
+      if (res.ok) {
+        const json = await res.json();
+        const s = json.data;
+        if (s) {
+          setSettings({
+            companyName: s.companyName || '',
+            companyCode: s.companyCode || '',
+            defaultCurrency: s.defaultCurrency || 'USD',
+            defaultChargeableDivisor: String(s.defaultChargeableDivisor || '6000'),
+            trackingPrefix: s.trackingPrefix || '',
+            autoGenerateTracking: s.autoGenerateTracking ?? true,
+          });
+        }
+      }
+    } catch {}
+  }, []);
+
+  const loadStations = useCallback(async () => {
+    try {
+      const res = await fetch('/api/stations');
+      if (res.ok) {
+        const json = await res.json();
+        setStations(json.data || []);
+      }
+    } catch {}
+  }, []);
 
   const loadFreightRates = useCallback(async () => {
     try {
@@ -86,6 +99,20 @@ export default function SettingsPage() {
       if (!res.ok) return;
       const json = await res.json();
       setFreightRates(json.data || []);
+    } catch {}
+  }, []);
+
+  const loadAWBTypes = useCallback(async () => {
+    try {
+      const res = await fetch('/api/awb-types');
+      if (res.ok) { const j = await res.json(); setAwbTypes(j.data || []); }
+    } catch {}
+  }, []);
+
+  const loadCurrencies = useCallback(async () => {
+    try {
+      const res = await fetch('/api/currencies');
+      if (res.ok) { const j = await res.json(); setCurrencies(j.data || []); }
     } catch {}
   }, []);
 
@@ -97,14 +124,14 @@ export default function SettingsPage() {
       if (json?.data?.rates) {
         const rates = json.data.rates;
         setExCurrency(rates.currency || 'TZS');
-        setExRate(rates.rate || 12.0);
-        setExExchangeRate(rates.exchangeRate || 2520.0);
+        setExRate(rates.rate || 0);
+        setExExchangeRate(rates.exchangeRate || 0);
         setExSource(json.data.source || 'manual');
       }
     } catch {}
   }, []);
 
-  useEffect(() => { loadFreightRates(); loadExchangeRates(); }, [loadFreightRates, loadExchangeRates]);
+  useEffect(() => { loadSettings(); loadStations(); loadFreightRates(); loadExchangeRates(); loadAWBTypes(); loadCurrencies(); }, [loadSettings, loadStations, loadFreightRates, loadExchangeRates, loadAWBTypes, loadCurrencies]);
 
   const handleSaveExchangeRates = async () => {
     setExSaved(false);
@@ -149,7 +176,7 @@ export default function SettingsPage() {
         });
       }
       setShowFrForm(false);
-      setEditingFr(null);
+      setEditingFr(undefined);
       setFrForm(emptyFreightRate());
       loadFreightRates();
     } catch {}
@@ -157,6 +184,7 @@ export default function SettingsPage() {
   };
 
   const handleFrEdit = (rate: FreightRate) => {
+    if (!rate.id) return;
     setFrForm({
       shipmentType: rate.shipmentType,
       ratePerKg: rate.ratePerKg,
@@ -167,7 +195,8 @@ export default function SettingsPage() {
     setShowFrForm(true);
   };
 
-  const handleFrDelete = async (id: string) => {
+  const handleFrDelete = async (id: string | undefined) => {
+    if (!id) return;
     try {
       await fetch(`/api/freight-rates/${id}`, { method: 'DELETE' });
       loadFreightRates();
@@ -214,7 +243,7 @@ export default function SettingsPage() {
                 onChange={(e) => setSettings({ ...settings, defaultCurrency: e.target.value })}
                 className="flex h-9 w-full rounded-lg border border-gray-200 bg-white px-3 py-1 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
               >
-                {currencies.map((c) => <option key={c} value={c}>{c}</option>)}
+                {currencies.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
               </select>
             </div>
             <div className="space-y-1.5">
@@ -245,15 +274,19 @@ export default function SettingsPage() {
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
           <h3 className="mb-4 text-sm font-semibold text-gray-900 dark:text-white">Active Stations</h3>
           <div className="flex flex-wrap gap-2">
-            {stationOptions.map((s) => (
-              <label
-                key={s.value}
-                className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-              >
-                <input type="checkbox" defaultChecked className="h-4 w-4 rounded border-gray-300 text-blue-600" />
-                <span className="text-gray-700 dark:text-gray-300">{s.label}</span>
-              </label>
-            ))}
+            {stations.length === 0 ? (
+              <p className="text-sm text-gray-400">No stations configured</p>
+            ) : (
+              stations.map((s) => (
+                <label
+                  key={s.id}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                >
+                  <input type="checkbox" defaultChecked className="h-4 w-4 rounded border-gray-300 text-blue-600" />
+                  <span className="text-gray-700 dark:text-gray-300">{s.code} - {s.name}</span>
+                </label>
+              ))
+            )}
           </div>
         </div>
 
@@ -277,7 +310,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* ─── Exchange Rate ─── */}
+      {/* Exchange Rate */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
@@ -298,7 +331,7 @@ export default function SettingsPage() {
           <div className="space-y-1">
             <Label className="text-xs font-medium text-gray-700 dark:text-gray-300">Currency</Label>
             <select value={exCurrency} onChange={e => setExCurrency(e.target.value)} className="flex h-8 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-              {currencies.map(c => <option key={c} value={c}>{c}</option>)}
+              {currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
             </select>
           </div>
           <div className="space-y-1">
@@ -309,7 +342,7 @@ export default function SettingsPage() {
         <p className="mt-2 text-xs text-gray-400">Rate: {exRate} USD | 1 USD = {exExchangeRate} {exCurrency}</p>
       </div>
 
-      {/* ─── Freight Rate Management ─── */}
+      {/* Freight Rate Management */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
@@ -320,20 +353,19 @@ export default function SettingsPage() {
             <Button variant="outline" size="sm" onClick={loadFreightRates}>
               <RefreshCw className="mr-1 h-3 w-3" /> Refresh
             </Button>
-            <Button size="sm" onClick={() => { setFrForm(emptyFreightRate()); setEditingFr(null); setShowFrForm(true); }}>
+            <Button size="sm" onClick={() => { setFrForm(emptyFreightRate()); setEditingFr(undefined); setShowFrForm(true); }}>
               <Plus className="mr-1 h-3 w-3" /> Add Rate
             </Button>
           </div>
         </div>
 
-        {/* Add/Edit Form */}
         {showFrForm && (
           <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30">
             <div className="mb-3 flex items-center justify-between">
               <h4 className="text-xs font-semibold text-blue-700 dark:text-blue-400">
-                {editingFr ? 'Edit Freight Rate' : 'New Freight Rate'}
+                {editingFr !== undefined ? 'Edit Freight Rate' : 'New Freight Rate'}
               </h4>
-              <button onClick={() => { setShowFrForm(false); setEditingFr(null); }} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setShowFrForm(false); setEditingFr(undefined); }} className="text-gray-400 hover:text-gray-600">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -346,7 +378,7 @@ export default function SettingsPage() {
                   className="flex h-8 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                 >
                   <option value="">Select type</option>
-                  {awbTypeOptions.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  {awbTypes.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
                 </select>
               </div>
               <div className="space-y-1">
@@ -366,7 +398,6 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Freight Rates Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
@@ -385,7 +416,7 @@ export default function SettingsPage() {
               ) : (
                 freightRates.map((rate) => (
                   <tr key={rate.id} className="border-b border-gray-100 dark:border-gray-800">
-                    <td className="py-2 pr-4">{awbTypeOptions.find((t) => t.value === rate.shipmentType)?.label || rate.shipmentType}</td>
+                    <td className="py-2 pr-4">{awbTypes.find((t) => t.code === rate.shipmentType)?.label || rate.shipmentType}</td>
                     <td className="py-2 pr-4 font-medium">{rate.ratePerKg}</td>
                     <td className="py-2 pr-4">
                       <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${rate.isActive ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>

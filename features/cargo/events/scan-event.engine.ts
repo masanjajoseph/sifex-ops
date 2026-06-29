@@ -9,7 +9,6 @@ export interface ScanEventInput {
   eventType: ScanEventType;
   userId: string;
   userRole: string;
-  organizationId: string;
   stationId?: string;
   location?: { latitude: number; longitude: number; address: string };
   metadata?: Record<string, unknown>;

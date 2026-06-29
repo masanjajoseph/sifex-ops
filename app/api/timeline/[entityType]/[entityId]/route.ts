@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { apiSuccess, apiError, withErrorHandler, NotFoundError } from "@/lib/errors";
+import { apiSuccess, apiError, withErrorHandler } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest, { params }: { params: Promise<{ entityType: string; entityId: string }> }) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -22,10 +22,6 @@ export const GET = withErrorHandler(async (req: NextRequest, { params }: { param
     where: { aggregateId: entityId, aggregateType: entityType },
     orderBy: { createdAt: "desc" },
   });
-
-  if (timeline.length === 0) {
-    return apiError(new NotFoundError("Timeline"), 404);
-  }
 
   return apiSuccess(timeline);
 });

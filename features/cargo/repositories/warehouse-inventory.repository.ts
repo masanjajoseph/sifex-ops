@@ -4,7 +4,6 @@ import { paginate } from "@/lib/db-helpers";
 
 export interface WarehouseInventoryRecord {
   id: string;
-  organizationId: string;
   stationId: string;
   storageLocationId: string | null;
   houseAWBId: string | null;
@@ -23,7 +22,6 @@ export interface WarehouseInventoryRecord {
 
 export class WarehouseInventoryRepository {
   async create(data: {
-    organizationId: string;
     stationId: string;
     storageLocationId?: string;
     houseAWBId?: string;

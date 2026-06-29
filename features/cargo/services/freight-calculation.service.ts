@@ -6,7 +6,6 @@ export type PaymentMode = $Enums.PaymentMode;
 
 export interface FreightRate {
   id: string;
-  organizationId: string;
   shipmentType: string;
   minimumWeight: number;
   maximumWeight: number;

@@ -9,30 +9,45 @@ export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
   const { id } = await params;
   const record = await prisma.billingRecord.findUnique({
     where: { id, deletedAt: null },
-    include: { billingCharges: true, payments: true },
+    include: { billingCharges: true, payments: true, customer: true },
   });
 
   if (!record) {
     return apiError(new NotFoundError("Billing record"));
   }
 
-  return apiSuccess(record);
+  const houseAWB = record.houseAWBId
+    ? await prisma.houseAWB.findUnique({
+        where: { id: record.houseAWBId },
+        include: {
+          shipper: { select: { name: true, phone: true, address: true, city: true, email: true } },
+          masterAWB: { select: { awbNumber: true, shipmentType: true, originStation: { select: { name: true, code: true } } } },
+        },
+      })
+    : null;
+
+  const latestRate = await prisma.exchangeRateSnapshot.findFirst({ orderBy: { validAt: 'desc' } });
+  const exchangeRate = latestRate && typeof latestRate.rates === 'object' && latestRate.rates !== null
+    ? (latestRate.rates as Record<string, number>)['TZS'] ?? 2500
+    : 2500;
+
+  return apiSuccess({ ...record, houseAWB, exchangeRate });
 });
 
 export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
-  if (!hasPermission(session, "cargo:billing:update")) {
+  if (!hasPermission(session, "billing.update")) {
     return apiError(new Error("Forbidden"), 403);
   }
 
@@ -60,43 +75,66 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
     });
   }
 
-  if (body.charges?.length) {
+  if (body.charges) {
+    if (body.replaceCharges) {
+      await prisma.billingCharge.deleteMany({ where: { billingRecordId: id } });
+    }
     for (const charge of body.charges) {
+      let amount = charge.amount;
+      let description = charge.description || charge.type;
+      if (charge.type === "AIRLINE_FREIGHT" && charge.rate != null && charge.chargeableWeight != null) {
+        amount = Number(charge.rate) * Number(charge.chargeableWeight);
+        description = `Air freight (${charge.rate}/kg × ${charge.chargeableWeight} kg)`;
+      }
       await prisma.billingCharge.create({
         data: {
           billingRecordId: id,
           type: charge.type,
-          amount: charge.amount,
+          amount,
           currency: charge.currency || "USD",
-          description: charge.description,
+          description,
         },
       });
     }
 
     const updatedCharges = await prisma.billingCharge.findMany({ where: { billingRecordId: id } });
     const totalAmount = updatedCharges.reduce((sum, c) => sum + c.amount, 0);
-    const paidAmount = existing.paidAmount;
     await prisma.billingRecord.update({
       where: { id },
-      data: { totalAmount, remainingAmount: totalAmount - paidAmount },
+      data: { totalAmount, remainingAmount: Math.max(0, totalAmount - existing.paidAmount) },
     });
   }
 
   const updated = await prisma.billingRecord.findUnique({
     where: { id },
-    include: { billingCharges: true, payments: true },
+    include: { billingCharges: true, payments: true, customer: true },
   });
 
-  return apiSuccess(updated);
+  const houseAWB = updated?.houseAWBId
+    ? await prisma.houseAWB.findUnique({
+        where: { id: updated.houseAWBId },
+        include: {
+          shipper: { select: { name: true, phone: true, address: true, city: true, email: true } },
+          masterAWB: { select: { awbNumber: true, shipmentType: true, originStation: { select: { name: true, code: true } } } },
+        },
+      })
+    : null;
+
+  const latestRate = await prisma.exchangeRateSnapshot.findFirst({ orderBy: { validAt: 'desc' } });
+  const exchangeRate = latestRate && typeof latestRate.rates === 'object' && latestRate.rates !== null
+    ? (latestRate.rates as Record<string, number>)['TZS'] ?? 2500
+    : 2500;
+
+  return apiSuccess({ ...updated, houseAWB, exchangeRate });
 });
 
 export const POST = withErrorHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
-  if (!hasPermission(session, "cargo:billing:payment")) {
+  if (!hasPermission(session, "billing.payment")) {
     return apiError(new Error("Forbidden"), 403);
   }
 
@@ -108,38 +146,86 @@ export const POST = withErrorHandler(async (req: NextRequest, { params }: { para
   }
 
   const body = await req.json();
-  const payment = await prisma.payment.create({
+  const { status, paymentMethod, reference } = body;
+  const validStatuses = ["paid", "credited"];
+  if (!validStatuses.includes(status)) {
+    return apiError(new Error("Invalid status. Must be 'paid' or 'credited'"), 400);
+  }
+  if (!paymentMethod) {
+    return apiError(new Error("Payment method is required"), 400);
+  }
+
+  const validMethods = ["cash", "bank", "mobile"];
+  if (!validMethods.includes(paymentMethod)) {
+    return apiError(new Error("Invalid payment method. Must be 'cash', 'bank', or 'mobile'"), 400);
+  }
+
+  const paidAmount = existing.totalAmount;
+  await prisma.payment.create({
     data: {
+      processedById: session.user.id,
       billingRecordId: id,
-      amount: body.amount,
-      currency: body.currency || "USD",
-      paymentMethod: body.paymentMethod,
-      reference: body.reference,
-      exchangeRate: body.exchangeRate || 1.0,
-      notes: body.notes,
+      amount: paidAmount,
+      currency: existing.currency,
+      paymentMethod: paymentMethod.toUpperCase(),
+      reference: reference || `PAY-${Date.now()}`,
+      exchangeRate: 1.0,
     },
   });
 
-  const newPaid = existing.paidAmount + body.amount;
-  const newRemaining = Math.max(0, existing.totalAmount - newPaid);
+  const newStatus = status.toUpperCase();
+
   const updateData: Record<string, unknown> = {
-    paidAmount: newPaid,
-    remainingAmount: newRemaining,
+    status: newStatus,
+    paidAmount,
+    remainingAmount: 0,
+    fullyPaidAt: new Date(),
     firstPaymentAt: existing.firstPaymentAt || new Date(),
     lastPaymentAt: new Date(),
   };
-
-  if (newRemaining <= 0) {
-    updateData.status = "PAID";
-    updateData.fullyPaidAt = new Date();
-  } else {
-    updateData.status = existing.status === "NOT_BILLED" ? "DRAFT" : "PARTIAL_PAID";
-  }
 
   await prisma.billingRecord.update({
     where: { id },
     data: updateData as any,
   });
 
-  return apiSuccess(payment, 201);
+  // Cascade payment status to linked HAWB
+  if (existing.houseAWBId) {
+    await prisma.houseAWB.update({
+      where: { id: existing.houseAWBId },
+      data: {
+        billingStatus: newStatus as any,
+        paymentMethod: paymentMethod.toUpperCase() as any,
+      },
+    });
+  }
+
+  await prisma.trackingEvent.create({
+    data: {
+      entityType: "BillingRecord",
+      entityId: id,
+      eventType: "PAYMENT",
+      status: status.toUpperCase(),
+      title: `Payment of ${paidAmount} ${existing.currency} recorded`,
+      userId: session.user.id!,
+      createdAt: new Date(),
+    },
+  });
+
+  const updated = await prisma.billingRecord.findUnique({
+    where: { id },
+    include: { billingCharges: true, payments: true, customer: true },
+  });
+
+  const houseAWB = updated?.houseAWBId
+    ? await prisma.houseAWB.findUnique({
+        where: { id: updated.houseAWBId },
+        include: {
+          shipper: { select: { name: true, phone: true, address: true, city: true, email: true } },
+          masterAWB: { select: { awbNumber: true, shipmentType: true, originStation: { select: { name: true, code: true } } } },
+        },
+      })
+    : null;
+
+  return apiSuccess({ ...updated, houseAWB }, 200);
 });

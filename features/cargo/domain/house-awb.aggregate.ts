@@ -28,7 +28,6 @@ export class HouseAWBAggregate {
 
     const state: HouseAWBAggregateState = {
       id: crypto.randomUUID(),
-      organizationId: command.organizationId,
       status: HouseAWBStatus.EXPORT_CREATED,
       houseAWBNumber: trackingNumber,
       shipperId: command.shipperId,

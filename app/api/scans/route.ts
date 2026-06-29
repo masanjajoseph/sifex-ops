@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -20,7 +20,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const houseAWBId = searchParams.get("houseAWBId") || undefined;
 
   const where: Record<string, unknown> = {
-    organizationId: session.user.organizationId,
+    
   };
   if (eventType) where.eventType = eventType;
   if (barcode) where.barcode = barcode;
@@ -41,7 +41,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
 
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -67,7 +67,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
   const scan = await prisma.shipmentScan.create({
     data: {
-      organizationId: session.user.organizationId,
+      
       eventType: body.eventType,
       barcode: body.barcode,
       houseAWBId,

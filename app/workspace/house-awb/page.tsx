@@ -1,15 +1,14 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Search, FileText, RefreshCw } from 'lucide-react';
+import { Plus, Search, FileText, RefreshCw } from 'lucide-react';
+import Link from 'next/link';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { DataTable } from '@/components/ui/DataTable';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { AcceptCargoDialog } from '@/components/cargo/AcceptCargoDialog';
 
 interface HouseAWBItem {
   id: string;
@@ -74,7 +73,11 @@ export default function HouseAWBPage() {
             <Button variant="outline" size="sm" onClick={fetchData}>
               <RefreshCw className="mr-1 h-4 w-4" /> Refresh
             </Button>
-            <AcceptCargoDialog onSuccess={fetchData} />
+            <Link href="/workspace/export/new">
+              <Button size="sm">
+                <Plus className="mr-1 h-4 w-4" /> New Export
+              </Button>
+            </Link>
           </div>
         }
       />
@@ -100,21 +103,39 @@ export default function HouseAWBPage() {
           icon={<FileText className="h-12 w-12" />}
           title={data.length === 0 ? 'No House AWBs yet' : 'No results'}
           description="House AWBs are automatically created when cargo is accepted."
-          action={data.length === 0 ? <AcceptCargoDialog /> : undefined}
+          action={data.length === 0 ? (
+            <Link href="/workspace/export/new">
+              <Button size="sm">
+                <Plus className="mr-1 h-4 w-4" /> New Export
+              </Button>
+            </Link>
+          ) : undefined}
         />
       ) : (
-        <DataTable
-          columns={[
-            { header: 'HAWB Number', accessorKey: 'houseAWBNumber' as const },
-            { header: 'Tracking', accessorKey: 'trackingNumber' as const },
-            { header: 'Master AWB', accessorKey: 'masterAWB' as const, cell: ({ row }: any) => row.original.masterAWB?.awbNumber || '-' },
-            { header: 'Pieces', accessorKey: 'pieces' as const },
-            { header: 'Weight', accessorKey: 'weight' as const, cell: (info: any) => `${info.getValue()} kg` },
-            { header: 'Status', accessorKey: 'cargoStatus' as const, cell: (info: any) => <StatusBadge status={statusVariant(info.getValue() as string)} label={(info.getValue() as string).replace(/_/g, ' ')} /> },
-          ]}
-          data={filtered}
-          pageSize={15}
-        />
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
+            {filtered.map((ha) => (
+              <div
+                key={ha.id}
+                className="flex cursor-pointer items-center justify-between px-5 py-3 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                onClick={() => window.location.href = `/workspace/house-awb/${ha.id}`}
+              >
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{ha.houseAWBNumber}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {ha.trackingNumber}
+                    {ha.masterAWB && <span> · MAWB: {ha.masterAWB.awbNumber}</span>}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                  <span>{ha.pieces} pcs</span>
+                  <span>{ha.weight} kg</span>
+                  <StatusBadge status={statusVariant(ha.cargoStatus)} label={ha.cargoStatus.replace(/_/g, ' ')} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

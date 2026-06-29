@@ -77,6 +77,7 @@ enum PermissionModule {
   FLIGHTS = "flights",
   MANIFESTS = "manifests",
   QUOTES = "quotes",
+  TCRA = "tcra",
 }
 
 interface PermDef {
@@ -105,6 +106,7 @@ const SYSTEM_PERMISSIONS: PermDef[] = [
   { code: "warehouse.dispatch", name: "Dispatch Cargo", module: PermissionModule.WAREHOUSE, description: "Can dispatch cargo from warehouse" },
   ...generateCrud("billing", "Billing"),
   { code: "billing.approve", name: "Approve Invoices", module: PermissionModule.BILLING, description: "Can approve invoices" },
+  { code: "billing.payment", name: "Record Payment", module: PermissionModule.BILLING, description: "Can record payments against invoices" },
   ...generateCrud("delivery", "Delivery"),
   { code: "delivery.assign", name: "Assign Delivery", module: PermissionModule.DELIVERY, description: "Can assign deliveries to riders" },
   ...generateCrud("customers", "Customers"),
@@ -147,6 +149,143 @@ const SYSTEM_PERMISSIONS: PermDef[] = [
   // Quotes
   ...generateCrud("quotes", "Quotes"),
   { code: "quotes.approve", name: "Approve Quotes", module: PermissionModule.QUOTES, description: "Can approve freight quotes" },
+
+  // TCRA Integration
+  { code: "tcra.view", name: "View TCRA Monitor", module: PermissionModule.TCRA, description: "Can view TCRA integration monitoring" },
+  { code: "tcra.retry", name: "Retry TCRA Events", module: PermissionModule.TCRA, description: "Can retry failed TCRA events" },
+];
+
+// ─── Role-permission mappings ───
+
+interface RolePermMap {
+  roleCode: string;
+  permissionCodes: string[];
+}
+
+const ROLE_PERMISSIONS: RolePermMap[] = [
+  {
+    roleCode: "SUPER_ADMIN",
+    permissionCodes: SYSTEM_PERMISSIONS.map((p) => p.code),
+  },
+  {
+    roleCode: "ADMIN",
+    permissionCodes: [
+      ...generateCrud("users", "Users").map((p) => p.code),
+      ...generateCrud("roles", "Roles").map((p) => p.code),
+      ...generateCrud("billing", "Billing").map((p) => p.code),
+      "billing.approve", "billing.payment",
+      ...generateCrud("delivery", "Delivery").map((p) => p.code),
+      "delivery.assign",
+      ...generateCrud("settings", "Settings").map((p) => p.code),
+      "audit.view",
+      ...generateCrud("customers", "Customers").map((p) => p.code),
+      ...generateCrud("export", "Export Shipments").map((p) => p.code),
+      "export.approve",
+      ...generateCrud("import", "Import Shipments").map((p) => p.code),
+      "import.approve",
+      ...generateCrud("warehouse", "Warehouse").map((p) => p.code),
+      "warehouse.receive", "warehouse.dispatch",
+      ...generateCrud("master-awb", "Master AWB").map((p) => p.code),
+      "master-awb.approve",
+      ...generateCrud("house-awb", "House AWB").map((p) => p.code),
+      ...generateCrud("parcels", "Parcels").map((p) => p.code),
+      "parcels.assign",
+      "tracking.view", "tracking.update",
+      ...generateCrud("customs", "Customs").map((p) => p.code),
+      "customs.clear",
+      ...generateCrud("flights", "Flights").map((p) => p.code),
+      "flights.schedule",
+      ...generateCrud("manifests", "Manifests").map((p) => p.code),
+      "manifests.finalize",
+      ...generateCrud("quotes", "Quotes").map((p) => p.code),
+      "quotes.approve",
+      ...generateCrud("hr", "HR").map((p) => p.code),
+      "hr.attendance",
+      ...generateCrud("procurement", "Procurement").map((p) => p.code),
+      "procurement.approve",
+      "reports.view", "reports.export",
+      "tcra.view", "tcra.retry",
+    ],
+  },
+  {
+    roleCode: "BILLING_OFFICER",
+    permissionCodes: [
+      "billing.view", "billing.create", "billing.update", "billing.approve", "billing.payment",
+      "customers.view",
+      "master-awb.view", "house-awb.view",
+      "tracking.view",
+      "reports.view",
+    ],
+  },
+  {
+    roleCode: "FINANCE_MANAGER",
+    permissionCodes: [
+      "billing.view", "billing.create", "billing.update", "billing.delete", "billing.approve", "billing.payment",
+      "customers.view", "customers.create", "customers.update",
+      "master-awb.view", "house-awb.view",
+      "tracking.view",
+      "reports.view", "reports.export",
+      "quotes.view", "quotes.create", "quotes.update", "quotes.approve",
+    ],
+  },
+  {
+    roleCode: "EXPORT_OFFICER",
+    permissionCodes: [
+      "export.view", "export.create", "export.update",
+      "master-awb.view", "master-awb.create", "master-awb.update",
+      "house-awb.view", "house-awb.create", "house-awb.update",
+      "customers.view", "customers.create", "customers.update",
+      "parcels.view", "parcels.create",
+      "tracking.view", "tracking.update",
+      "flights.view",
+      "manifests.view", "manifests.create",
+    ],
+  },
+  {
+    roleCode: "IMPORT_OFFICER",
+    permissionCodes: [
+      "import.view", "import.create", "import.update",
+      "master-awb.view", "house-awb.view",
+      "customs.view", "customs.create", "customs.update", "customs.clear",
+      "tracking.view", "tracking.update",
+      "warehouse.view",
+    ],
+  },
+  {
+    roleCode: "WAREHOUSE_SUPERVISOR",
+    permissionCodes: [
+      "warehouse.view", "warehouse.create", "warehouse.update", "warehouse.delete",
+      "warehouse.receive", "warehouse.dispatch",
+      "master-awb.view", "house-awb.view",
+      "delivery.view", "delivery.assign",
+      "parcels.view", "parcels.update", "parcels.assign",
+      "tracking.view", "tracking.update",
+    ],
+  },
+  {
+    roleCode: "WAREHOUSE_OFFICER",
+    permissionCodes: [
+      "warehouse.view", "warehouse.create", "warehouse.update",
+      "warehouse.receive", "warehouse.dispatch",
+      "master-awb.view", "house-awb.view",
+      "parcels.view", "parcels.update",
+      "tracking.view",
+    ],
+  },
+  {
+    roleCode: "CEO",
+    permissionCodes: [
+      "reports.view", "reports.export",
+      "tracking.view",
+      "billing.view",
+      "export.view", "import.view",
+      "warehouse.view",
+      "delivery.view",
+      "customers.view",
+      "master-awb.view", "house-awb.view",
+      "tcra.view",
+    ],
+  },
 ];
 
 // ─── Helpers ───
@@ -213,12 +352,22 @@ async function seedPermissions(): Promise<Record<string, string>> {
   return map;
 }
 
-async function linkPermissions(roleId: string, permMap: Record<string, string>) {
-  log("info", "Linking all permissions to SUPER_ADMIN...");
+async function linkPermissions(
+  roleId: string,
+  permMap: Record<string, string>,
+  permissionCodes: string[],
+  roleLabel: string,
+) {
+  log("info", `Linking permissions to ${roleLabel}...`);
   let linked = 0;
   let skipped = 0;
 
-  for (const [code, permId] of Object.entries(permMap)) {
+  for (const code of permissionCodes) {
+    const permId = permMap[code];
+    if (!permId) {
+      log("warn", `Permission not found: ${code} — skipping`);
+      continue;
+    }
     const exists = await prisma.rolePermission.findUnique({
       where: { roleId_permissionId: { roleId, permissionId: permId } },
     });
@@ -227,7 +376,7 @@ async function linkPermissions(roleId: string, permMap: Record<string, string>) 
     linked++;
   }
 
-  log("success", `${linked} linked, ${skipped} already exist`);
+  log("success", `${linked} linked, ${skipped} already exist for ${roleLabel}`);
 }
 
 async function ensureSuperUser(roleId: string) {
@@ -299,6 +448,121 @@ async function ensureSuperUser(roleId: string) {
   return user;
 }
 
+async function seedBranch() {
+  log("info", "Seeding branch...");
+
+  const branchId = "11111111-1111-1111-1111-111111111111";
+  await prisma.branch.upsert({
+    where: { id: branchId },
+    update: { name: "Main Branch", code: "MAIN" },
+    create: { id: branchId, name: "Main Branch", code: "MAIN" },
+  });
+
+  log("success", "Branch seeded");
+  return branchId;
+}
+
+async function seedStations(branchId: string) {
+  log("info", "Seeding stations...");
+
+  const stationDefs = [
+    { code: "CAN" as const, name: "Guangzhou", type: "AIRPORT" },
+    { code: "HKG" as const, name: "Hong Kong", type: "AIRPORT" },
+    { code: "DAR" as const, name: "Dar es Salaam", type: "AIRPORT" },
+    { code: "DXB" as const, name: "Dubai", type: "AIRPORT" },
+    { code: "NBO" as const, name: "Nairobi", type: "AIRPORT" },
+    { code: "SHJ" as const, name: "Sharjah", type: "AIRPORT" },
+    { code: "JNB" as const, name: "Johannesburg", type: "AIRPORT" },
+    { code: "MCT" as const, name: "Muscat", type: "AIRPORT" },
+    { code: "BOM" as const, name: "Mumbai", type: "AIRPORT" },
+    { code: "ADD" as const, name: "Addis Ababa", type: "AIRPORT" },
+    { code: "ZNZ" as const, name: "Zanzibar", type: "AIRPORT" },
+  ];
+
+  for (const s of stationDefs) {
+    await prisma.station.upsert({
+      where: { code: s.code },
+      update: { name: s.name, type: s.type, branchId },
+      create: { code: s.code, name: s.name, type: s.type, branchId },
+    });
+  }
+
+  log("success", `${stationDefs.length} stations seeded`);
+}
+
+async function seedAWBTypes() {
+  log("info", "Seeding AWB types...");
+
+  const types = [
+    { code: "CAN_GUANGZHOU", name: "CAN - Guangzhou", label: "CAN - Guangzhou", sortOrder: 1 },
+    { code: "HKG_HONGKONG", name: "HKG - Hong Kong", label: "HKG - Hong Kong", sortOrder: 2 },
+    { code: "DXB_DUBAI", name: "DXB - Dubai", label: "DXB - Dubai", sortOrder: 3 },
+    { code: "CAN_EXPRESS", name: "CAN - Express", label: "CAN - Express", sortOrder: 4 },
+    { code: "MCO_EXPRESS", name: "MCO - Express", label: "MCO - Express", sortOrder: 5 },
+  ];
+
+  for (const t of types) {
+    await prisma.aWBType.upsert({
+      where: { code: t.code },
+      update: { name: t.name, label: t.label, sortOrder: t.sortOrder },
+      create: { code: t.code, name: t.name, label: t.label, sortOrder: t.sortOrder },
+    });
+  }
+  log("success", `${types.length} AWB types seeded`);
+}
+
+async function seedAirlines() {
+  log("info", "Seeding airlines...");
+
+  const airlines = [
+    { iata: "ET", icao: "ETH", name: "Ethiopian Airlines", rate: 2.50 },
+    { iata: "QR", icao: "QTR", name: "Qatar Airways", rate: 3.20 },
+    { iata: "EK", icao: "UAE", name: "Emirates", rate: 3.40 },
+    { iata: "TK", icao: "THY", name: "Turkish Airlines", rate: 3.10 },
+    { iata: "KQ", icao: "KQA", name: "Kenya Airways", rate: 2.80 },
+    { iata: "TC", icao: "ATC", name: "Air Tanzania", rate: 2.20 },
+    { iata: "MS", icao: "MSR", name: "Egyptair", rate: 2.60 },
+    { iata: "EY", icao: "ETD", name: "Etihad Airways", rate: 3.30 },
+    { iata: "KL", icao: "KLM", name: "KLM Royal Dutch Airlines", rate: 3.50 },
+  ];
+
+  for (const a of airlines) {
+    await prisma.airline.upsert({
+      where: { iataCode: a.iata },
+      update: { name: a.name, icaoCode: a.icao, standardRate: a.rate },
+      create: { iataCode: a.iata, icaoCode: a.icao, name: a.name, standardRate: a.rate },
+    });
+  }
+
+  log("success", `${airlines.length} airlines seeded`);
+}
+
+async function seedCurrencies() {
+  log("info", "Seeding currencies...");
+
+  const currencies = [
+    { code: "USD", name: "US Dollar", symbol: "$", sortOrder: 1 },
+    { code: "EUR", name: "Euro", symbol: "\u20AC", sortOrder: 2 },
+    { code: "GBP", name: "British Pound", symbol: "\u00A3", sortOrder: 3 },
+    { code: "TZS", name: "Tanzanian Shilling", symbol: "TSh", sortOrder: 4 },
+    { code: "KES", name: "Kenyan Shilling", symbol: "KSh", sortOrder: 5 },
+    { code: "CNY", name: "Chinese Yuan", symbol: "\u00A5", sortOrder: 6 },
+    { code: "AED", name: "UAE Dirham", symbol: "AED", sortOrder: 7 },
+    { code: "ZAR", name: "South African Rand", symbol: "R", sortOrder: 8 },
+    { code: "INR", name: "Indian Rupee", symbol: "\u20B9", sortOrder: 9 },
+    { code: "ETB", name: "Ethiopian Birr", symbol: "Br", sortOrder: 10 },
+  ];
+
+  for (const c of currencies) {
+    await prisma.currency.upsert({
+      where: { code: c.code },
+      update: { name: c.name, symbol: c.symbol, sortOrder: c.sortOrder },
+      create: { code: c.code, name: c.name, symbol: c.symbol, sortOrder: c.sortOrder },
+    });
+  }
+  log("success", `${currencies.length} currencies seeded`);
+}
+
 // ─── Main ───
 
 async function main() {
@@ -316,10 +580,30 @@ async function main() {
   const saRoleId = roleMap["SUPER_ADMIN"];
   if (!saRoleId) { log("error", "SUPER_ADMIN role missing"); process.exit(1); }
 
-  await linkPermissions(saRoleId, permMap);
+  // Link permissions for all roles based on ROLE_PERMISSIONS mapping
+  for (const mapping of ROLE_PERMISSIONS) {
+    const roleId = roleMap[mapping.roleCode];
+    if (!roleId) {
+      log("warn", `Role not found: ${mapping.roleCode} — skipping permission linking`);
+      continue;
+    }
+    await linkPermissions(roleId, permMap, mapping.permissionCodes, mapping.roleCode);
+  }
   console.log("");
 
   await ensureSuperUser(saRoleId);
+
+  const branchId = await seedBranch();
+  console.log("");
+
+  await seedStations(branchId);
+  console.log("");
+
+  await seedAirlines();
+  console.log("");
+
+  await seedAWBTypes();
+  await seedCurrencies();
 
   console.log("");
   log("success", "Seed complete");

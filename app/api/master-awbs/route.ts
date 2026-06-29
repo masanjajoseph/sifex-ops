@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -17,12 +17,20 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "10")));
   const status = searchParams.get("status") || undefined;
   const search = searchParams.get("search") || undefined;
+  const scope = searchParams.get("scope") || undefined;
 
   const where: Record<string, unknown> = {
-    organizationId: session.user.organizationId,
+    
     deletedAt: null,
   };
   if (status) where.cargoStatus = status;
+  if (scope === "export") {
+    where.cargoStatus = { in: ["INITIATED", "ACCEPTED", "RCS", "MANIFESTED", "LOADED", "DEPARTED"] };
+  } else if (scope === "import") {
+    where.cargoStatus = { in: ["IN_TRANSIT", "ARRIVED", "UNDER_CLEARANCE", "CUSTOMS_HOLD", "CUSTOMS_QUERY"] };
+  } else if (scope === "warehouse") {
+    where.cargoStatus = { in: ["RELEASED", "AWAITING_DELIVERY", "OUT_FOR_DELIVERY", "PICKED_UP", "DELIVERED", "POD_SIGNED"] };
+  }
   if (search) {
     where.OR = [
       { awbNumber: { contains: search, mode: "insensitive" } },
@@ -48,50 +56,84 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
 
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
   const body = await req.json();
 
-  const masterAWB = await prisma.masterAWB.create({
-    data: {
-      organizationId: session.user.organizationId,
-      awbNumber: body.awbNumber,
-      trackingNumber: body.trackingNumber || body.awbNumber,
-      shipmentType: body.shipmentType || ShipmentType.CAN_GUANGZHOU,
-      paymentMode: body.paymentMode || PaymentMode.PP,
-      currency: body.currency || "USD",
-      customsValue: body.customsValue || 0,
-      originStationId: body.originStationId,
-      destinationStationId: body.destinationStationId,
-      senderName: body.senderName || "",
-      senderAddress: body.senderAddress || "",
-      senderCompany: body.senderCompany,
-      senderPhone: body.senderPhone,
-      senderCity: body.senderCity,
-      senderCountry: body.senderCountry,
-      receiverName: body.receiverName || "",
-      receiverAddress: body.receiverAddress || "",
-      receiverCompany: body.receiverCompany,
-      receiverPhone: body.receiverPhone,
-      receiverCity: body.receiverCity,
-      receiverCountry: body.receiverCountry,
-      awbPieces: body.awbPieces || 0,
-      awbWeight: body.awbWeight || 0,
-      volume: body.volume || 0,
-      chargeableWeight: body.chargeableWeight || 0,
-      volumeWeight: body.volumeWeight || 0,
-      description: body.description,
-      orderNumber: body.orderNumber,
-      cargoStatus: CargoStatus.INITIATED,
-      airlineId: body.airlineId || "",
-      flightNumber: body.flightNumber || "",
-      departureTime: body.departureTime ? new Date(body.departureTime) : new Date(),
-      arrivalTime: body.arrivalTime ? new Date(body.arrivalTime) : new Date(),
-    },
-    include: { houseAWBs: true, originStation: true, destinationStation: true },
-  });
+  if (!body.originStationId || !body.destinationStationId) {
+    return apiError(new Error("originStationId and destinationStationId are required"), 400);
+  }
+  if (!body.awbNumber) {
+    return apiError(new Error("awbNumber is required"), 400);
+  }
+
+  const depTime = body.departureTime ? new Date(body.departureTime) : new Date();
+  const arrTime = body.arrivalTime ? new Date(body.arrivalTime) : new Date(depTime.getTime() + 6 * 60 * 60 * 1000);
+
+  const [masterAWB] = await Promise.all([
+    prisma.masterAWB.create({
+      data: {
+        createdById: session.user.id,
+        awbNumber: body.awbNumber,
+        trackingNumber: body.trackingNumber || body.awbNumber,
+        shipmentType: body.shipmentType || ShipmentType.CAN_GUANGZHOU,
+        paymentMode: body.paymentMode || PaymentMode.PP,
+        currency: body.currency || "USD",
+        customsValue: body.customsValue || 0,
+        originStationId: body.originStationId,
+        destinationStationId: body.destinationStationId,
+        senderName: body.senderName || "",
+        senderAddress: body.senderAddress || "",
+        senderCompany: body.senderCompany,
+        senderPhone: body.senderPhone,
+        senderCity: body.senderCity,
+        senderCountry: body.senderCountry,
+        receiverName: body.receiverName || "",
+        receiverAddress: body.receiverAddress || "",
+        receiverCompany: body.receiverCompany,
+        receiverPhone: body.receiverPhone,
+        receiverCity: body.receiverCity,
+        receiverCountry: body.receiverCountry,
+        awbPieces: body.awbPieces || 0,
+        awbWeight: body.awbWeight || 0,
+        volume: body.volume || 0,
+        chargeableWeight: body.chargeableWeight || 0,
+        volumeWeight: body.volumeWeight || 0,
+        description: body.description,
+        orderNumber: body.orderNumber,
+        cargoStatus: CargoStatus.INITIATED,
+        airlineId: body.airlineId || "",
+        flightNumber: body.flightNumber || "",
+        departureTime: depTime,
+        arrivalTime: arrTime,
+      },
+      include: { houseAWBs: true, originStation: true, destinationStation: true },
+    }),
+    body.flightNumber && body.airlineId
+      ? prisma.flight.upsert({
+          where: {
+            flightNumber_airlineId_departureTime: {
+              flightNumber: body.flightNumber,
+              airlineId: body.airlineId,
+              departureTime: depTime,
+            },
+          },
+          update: { status: "SCHEDULED", originStationId: body.originStationId, destinationStationId: body.destinationStationId, arrivalTime: arrTime },
+          create: {
+            
+            airlineId: body.airlineId,
+            flightNumber: body.flightNumber,
+            originStationId: body.originStationId,
+            destinationStationId: body.destinationStationId,
+            departureTime: depTime,
+            arrivalTime: arrTime,
+            status: "SCHEDULED",
+          },
+        })
+      : Promise.resolve(null),
+  ]);
 
   return apiSuccess(masterAWB, 201);
 });

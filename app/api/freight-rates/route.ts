@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -17,7 +17,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const shipmentType = searchParams.get("shipmentType") || undefined;
 
   const where: Record<string, unknown> = {
-    organizationId: session.user.organizationId,
+    
     deletedAt: null,
   };
   if (isActive !== null) where.isActive = isActive === "true";
@@ -33,7 +33,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
 
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
   }
 
@@ -47,7 +47,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
   const rate = await prisma.freightRate.create({
     data: {
-      organizationId: session.user.organizationId,
+      
       shipmentType: data.shipmentType,
       ratePerKg: data.ratePerKg,
       currency: data.currency,

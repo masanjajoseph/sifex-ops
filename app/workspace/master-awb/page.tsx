@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, FileText, Filter, RefreshCw } from 'lucide-react';
+import Link from 'next/link';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { DataTable } from '@/components/ui/DataTable';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -9,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { AcceptCargoDialog } from '@/components/cargo/AcceptCargoDialog';
 
 interface MasterAWBItem {
   id: string;
@@ -93,7 +93,11 @@ export default function MasterAWBPage() {
             <Button variant="outline" size="sm" onClick={fetchData}>
               <RefreshCw className="mr-1 h-4 w-4" /> Refresh
             </Button>
-            <AcceptCargoDialog onSuccess={fetchData} />
+            <Link href="/workspace/export/new">
+              <Button size="sm">
+                <Plus className="mr-1 h-4 w-4" /> New Export
+              </Button>
+            </Link>
           </div>
         }
       />
@@ -128,7 +132,13 @@ export default function MasterAWBPage() {
               : 'Try adjusting your search terms.'
           }
           action={
-            data.length === 0 ? <AcceptCargoDialog /> : undefined
+            data.length === 0 ? (
+              <Link href="/workspace/export/new">
+                <Button size="sm">
+                  <Plus className="mr-1 h-4 w-4" /> New Export
+                </Button>
+              </Link>
+            ) : undefined
           }
         />
       ) : (

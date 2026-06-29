@@ -10,7 +10,6 @@ export type CargoStatus = $Enums.CargoStatus;
 const warehouseWorkflow = new WarehouseStatusWorkflow();
 
 export interface ReceiveCargoParams {
-  organizationId: string;
   stationId: string;
   houseAWBId?: string;
   masterAWBId?: string;
@@ -49,7 +48,6 @@ export class WarehouseService {
   async receiveCargo(params: ReceiveCargoParams) {
     const inventory = await prisma.warehouseInventory.create({
       data: {
-        organizationId: params.organizationId,
         stationId: params.stationId,
         houseAWBId: params.houseAWBId ?? null,
         masterAWBId: params.masterAWBId ?? null,
@@ -66,7 +64,6 @@ export class WarehouseService {
     const status: CargoStatus = this.mapWarehouseToCargoStatus("RECEIVED");
 
     await trackingService.createTrackingEvent({
-      organizationId: params.organizationId,
       entityType,
       entityId: aggregateId,
       eventType: "WAREHOUSE_RECEIVED",
@@ -140,7 +137,6 @@ export class WarehouseService {
     const status: CargoStatus = "RCS";
 
     await trackingService.createTrackingEvent({
-      organizationId: inventory.organizationId,
       entityType,
       entityId: aggregateId,
       eventType: "WAREHOUSE_STORED",
@@ -191,7 +187,6 @@ export class WarehouseService {
     const status: CargoStatus = this.mapWarehouseToCargoStatus("PICKED");
 
     await trackingService.createTrackingEvent({
-      organizationId: inventory.organizationId,
       entityType,
       entityId: aggregateId,
       eventType: "WAREHOUSE_READY_FOR_DISPATCH",
@@ -238,7 +233,6 @@ export class WarehouseService {
     const status: CargoStatus = "LOADED";
 
     await trackingService.createTrackingEvent({
-      organizationId: inventory.organizationId,
       entityType,
       entityId: aggregateId,
       eventType: "WAREHOUSE_DISPATCHED",
@@ -272,7 +266,6 @@ export class WarehouseService {
     const status: CargoStatus = "OFFLOADED";
 
     await trackingService.createTrackingEvent({
-      organizationId: inventory.organizationId,
       entityType,
       entityId: aggregateId,
       eventType: "IMPORT_ARRIVED_AT_HUB",
@@ -316,7 +309,6 @@ export class WarehouseService {
     const status: CargoStatus = "RELEASED";
 
     await trackingService.createTrackingEvent({
-      organizationId: inventory.organizationId,
       entityType,
       entityId: aggregateId,
       eventType: "CUSTOMS_RELEASED",
@@ -405,7 +397,6 @@ export class WarehouseService {
     const status: CargoStatus = "RCS";
 
     await trackingService.createTrackingEvent({
-      organizationId: parcel.houseAWB.organizationId,
       entityType: "Parcel",
       entityId: parcelId,
       eventType: "WAREHOUSE_STORED",
@@ -467,7 +458,6 @@ export class WarehouseService {
     const status: CargoStatus = "RCS";
 
     await trackingService.createTrackingEvent({
-      organizationId: inventory.organizationId,
       entityType,
       entityId: aggregateId,
       eventType: "WAREHOUSE_STORED",
