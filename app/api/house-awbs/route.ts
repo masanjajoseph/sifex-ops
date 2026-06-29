@@ -51,7 +51,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const [items, total] = await Promise.all([
     prisma.houseAWB.findMany({
       where: where as any,
-      include: { parcels: true, shipper: true, receiver: true, masterAWB: true },
+      include: { masterAWB: { select: { awbNumber: true } } },
       skip: (page - 1) * limit,
       take: limit,
       orderBy: { createdAt: "desc" },
