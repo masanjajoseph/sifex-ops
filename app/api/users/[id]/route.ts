@@ -72,9 +72,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (firstName !== undefined) updateData.firstName = firstName;
     if (lastName !== undefined) updateData.lastName = lastName;
     if (phone !== undefined) updateData.phone = phone;
-    if (departmentId !== undefined) updateData.departmentId = departmentId;
-    if (positionId !== undefined) updateData.positionId = positionId;
-    if (branchId !== undefined) updateData.branchId = branchId;
+    if (departmentId !== undefined) updateData.departmentId = departmentId || null;
+    if (positionId !== undefined) updateData.positionId = positionId || null;
+    if (branchId !== undefined) updateData.branchId = branchId || null;
     if (status !== undefined) updateData.status = status;
     if (password) updateData.password = await hash(password, SALT_ROUNDS);
 

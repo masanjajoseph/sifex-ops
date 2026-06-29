@@ -106,7 +106,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { email, firstName, lastName, phone, departmentId, positionId, branchId, roleIds } = body;
+    const { email, firstName, lastName, phone, roleIds } = body;
+    const departmentId = body.departmentId || null;
+    const positionId = body.positionId || null;
+    const branchId = body.branchId || null;
 
     if (!email || !firstName || !lastName || !roleIds?.length) {
       return NextResponse.json({ error: "Email, firstName, lastName, and roleIds are required" }, { status: 400 });
