@@ -39,6 +39,9 @@ interface HAWBDetail {
   }>;
   masterAWB: {
     id: string; awbNumber: string;
+    cargoStatus?: string;
+    workflowStatus?: string;
+    workflowStage?: string;
     originStation?: { code: string; name: string };
     destinationStation?: { code: string; name: string };
   } | null;
@@ -150,7 +153,7 @@ export default function HouseAWBDetailPage() {
             <Button variant="outline" size="sm" onClick={fetchDetail}>
               <RefreshCw className="mr-1 h-4 w-4" /> Refresh
             </Button>
-            {hawb.shipmentType !== 'HKG_HONGKONG' && (
+            {hawb.shipmentType !== 'HKG_HONGKONG' && hawb.masterAWB?.destinationStation?.code !== 'HKG' && (!hawb.masterAWB?.workflowStage || hawb.masterAWB?.workflowStage === 'EXPORT') && (
               <Button size="sm" onClick={handleTransferToHKG} disabled={transferring}>
                 {transferring ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plane className="mr-1 h-3 w-3" />}
                 Move to HKG
@@ -262,7 +265,7 @@ export default function HouseAWBDetailPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Plane className="h-4 w-4 text-blue-500" />
-                  <button type="button" onClick={() => router.push(`/workspace/export/${hawb.masterAWB!.id}`)} className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">
+                  <button type="button" onClick={() => router.push(`/workspace/master-awb/${hawb.masterAWB!.id}`)} className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">
                     {hawb.masterAWB.awbNumber}
                   </button>
                   <ExternalLink className="h-3 w-3 text-gray-400" />

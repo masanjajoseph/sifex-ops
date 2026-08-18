@@ -13,7 +13,7 @@ Enterprise UX polish pass across the Sifex platform. Focused on provider infrast
 **Fix:**
 - Created `components/Providers.tsx` — client wrapper composing `SessionProvider` + `ThemeProvider`
 - Wired into `app/layout.tsx` with `suppressHydrationWarning`
-- Updated metadata from template defaults to "Sifex ERP"
+- Updated metadata from template defaults to "Sifex Air Cargo"
 
 **Files:**
 - `components/Providers.tsx` — new

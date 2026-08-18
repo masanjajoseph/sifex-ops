@@ -4,7 +4,7 @@ export default function DevUIPage() {
 
       {/* Header */}
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold text-foreground">Sifex ERP — Design System</h1>
+        <h1 className="text-2xl font-bold text-foreground">Sifex Air Cargo — Design System</h1>
         <p className="text-sm text-muted-foreground">Brand identity: Red · White · Black · Blue accent · Slate neutrals</p>
       </div>
 

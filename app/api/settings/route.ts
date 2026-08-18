@@ -1,7 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { apiSuccess, apiError, withErrorHandler, NotFoundError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+
+const SETTINGS_PERMISSION = "settings.update";
+
+function canUpdateSettings(session: Awaited<ReturnType<typeof auth>>): boolean {
+  if (!session?.user) return false;
+  const roles = (session.user as any).roles as string[] | undefined;
+  if (roles?.includes("SUPER_ADMIN") || roles?.includes("ADMIN")) return true;
+  const permissions = (session.user as any).permissions as string[] | undefined;
+  return permissions?.includes(SETTINGS_PERMISSION) ?? false;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +34,10 @@ export const PUT = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
   if (!session?.user) {
     return apiError(new Error("Unauthorized"), 401);
+  }
+
+  if (!canUpdateSettings(session)) {
+    return apiError(new Error("Insufficient permissions to update settings"), 403);
   }
 
   const body = await req.json();

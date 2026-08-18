@@ -1,14 +1,10 @@
-// Domain event type definitions
-
 export enum EventType {
-  // User events
   USER_CREATED = "user.created",
   USER_UPDATED = "user.updated",
   USER_DELETED = "user.deleted",
   USER_LOGIN = "user.login",
   USER_LOGOUT = "user.logout",
 
-  // Shipment events
   SHIPMENT_CREATED = "shipment.created",
   SHIPMENT_STATUS_CHANGED = "shipment.status_changed",
   SHIPMENT_ASSIGNED = "shipment.assigned",
@@ -21,7 +17,6 @@ export enum EventType {
   SHIPMENT_CANCELLED = "shipment.cancelled",
   SHIPMENT_EXCEPTION_REPORTED = "shipment.exception_reported",
 
-  // Master AWB events
   MASTER_AWB_CREATED = "master_awb.created",
   MASTER_AWB_CONSOLIDATED = "master_awb.consolidated",
   MASTER_AWB_MANIFESTED = "master_awb.manifested",
@@ -31,39 +26,49 @@ export enum EventType {
   MASTER_AWB_HOUSE_ATTACHED = "master_awb.house_attached",
   MASTER_AWB_HOUSE_DETACHED = "master_awb.house_detached",
 
-  // House AWB events
   HOUSE_AWB_CREATED = "house_awb.created",
   HOUSE_AWB_STATUS_CHANGED = "house_awb.status_changed",
 
-  // Warehouse events
   CARGO_RECEIVED = "warehouse.cargo_received",
   CARGO_DISPATCHED = "warehouse.cargo_dispatched",
   WAREHOUSE_STORED = "warehouse.stored",
   WAREHOUSE_HELD = "warehouse.held",
 
-  // Scan events
   SCAN_PROCESSED = "scan.processed",
   SCAN_FAILED = "scan.failed",
 
-  // Timeline events
   TIMELINE_EVENT_CREATED = "timeline.event_created",
 
-  // Billing events
   INVOICE_CREATED = "billing.invoice_created",
   PAYMENT_RECEIVED = "billing.payment_received",
   BILLING_CHARGED = "billing.charged",
   BILLING_INVOICED = "billing.invoiced",
   BILLING_PAID = "billing.paid",
 
-  // Delivery events
   DELIVERY_ASSIGNED = "delivery.assigned",
   DELIVERY_COMPLETED = "delivery.completed",
   DELIVERY_STARTED = "delivery.started",
   DELIVERY_FAILED = "delivery.failed",
 
-  // Customs events
   CUSTOMS_DECLARATION_SUBMITTED = "customs.declaration_submitted",
   CUSTOMS_STATUS_CHANGED = "customs.status_changed",
   CUSTOMS_HOLD_ISSUED = "customs.hold_issued",
   CUSTOMS_RELEASED = "customs.released",
+
+  ACTIVITY_FEED_CREATED = "activity_feed.created",
+  NOTIFICATION_SENT = "notification.sent",
+  SMS_SENT = "sms.sent",
+  SMS_DELIVERED = "sms.delivered",
+  SMS_FAILED = "sms.failed",
+  DOCUMENT_GENERATED = "document.generated",
+  DOCUMENT_SIGNED = "document.signed",
+  SEARCH_PERFORMED = "search.performed",
+  BARCODE_SCANNED = "barcode.scanned",
+  QR_SCANNED = "qr.scanned",
+  JOB_CREATED = "job.created",
+  JOB_COMPLETED = "job.completed",
+  JOB_FAILED = "job.failed",
+  RULE_EXECUTED = "rule.executed",
+  ESCALATION_CREATED = "escalation.created",
+  ESCALATION_RESOLVED = "escalation.resolved",
 }

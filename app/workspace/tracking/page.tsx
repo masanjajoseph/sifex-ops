@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { TrackingSearch } from '@/components/cargo/TrackingSearch';
 import { MapPin } from 'lucide-react';
@@ -12,7 +13,9 @@ interface Station {
   name: string;
 }
 
-export default function TrackingPage() {
+function TrackingContent() {
+  const searchParams = useSearchParams();
+  const awbFromUrl = searchParams.get('awb') || undefined;
   const [stations, setStations] = useState<Station[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -41,7 +44,7 @@ export default function TrackingPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <TrackingSearch />
+          <TrackingSearch initialQuery={awbFromUrl} />
         </div>
 
         <div className="space-y-4">
@@ -90,5 +93,13 @@ export default function TrackingPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function TrackingPage() {
+  return (
+    <Suspense fallback={<div className="space-y-6"><PageHeader title="Tracking" description="Loading..." breadcrumbs={[{ label: 'Workspace', href: '/workspace' }, { label: 'Tracking' }]} /></div>}>
+      <TrackingContent />
+    </Suspense>
   );
 }

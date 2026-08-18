@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-This document defines the operational core of Sifex ERP. It replaces boolean-based state tracking with:
+This document defines the operational core of Sifex Air Cargo. It replaces boolean-based state tracking with:
 - Centralized status machines
 - Event sourcing patterns
 - Workflow transition rules

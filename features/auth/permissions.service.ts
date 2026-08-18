@@ -21,7 +21,7 @@ type AuthResult =
 
 export async function requireAuth(): Promise<AuthResult> {
   const session = await auth();
-  if (!session?.user?.id) return { session: null, error: apiUnauthorized() as NextResponse };
+  if (!session?.user?.id) return { session: null, error: apiUnauthorized() };
   return { session: session as NonNullable<Awaited<ReturnType<typeof auth>>>, error: null };
 }
 

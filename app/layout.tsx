@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sifex ERP | Air Cargo Management",
+  title: "Sifex Air Cargo | Air Cargo Management",
   description: "Enterprise air cargo courier management platform",
   icons: {
     icon: "/logo.png",

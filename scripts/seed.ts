@@ -570,7 +570,7 @@ async function seedCurrencies() {
 
 async function main() {
   console.log("\n========================================");
-  log("info", "Sifex ERP — System Seed");
+  log("info", "Sifex Air Cargo — System Seed");
   log("info", `Started: ${new Date().toISOString()}`);
   console.log("");
 

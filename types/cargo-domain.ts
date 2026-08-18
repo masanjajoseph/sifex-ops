@@ -99,7 +99,7 @@ export enum StationCode {
 export enum BillingStatus {
   NOT_BILLED = "NOT_BILLED", DRAFT = "DRAFT", INVOICED = "INVOICED",
   UNPAID = "UNPAID", PARTIAL_PAID = "PARTIAL_PAID", PAID = "PAID",
-  CREDITED = "CREDITED", REFUNDED = "REFUNDED",
+  CREDITED = "CREDITED", REFUNDED = "REFUNDED", WAITING_PAYMENT = "WAITING_PAYMENT",
 }
 
 export enum PaymentMethod {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Search, MapPin, Package, PackageCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,8 +9,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 
 interface TrackingResult {
   entityType: string;
-  entityId: string;
-  events: Array<{
+  entity: Record<string, unknown>;
+  timeline: Array<{
     id: string;
     eventType: string;
     title: string;
@@ -24,22 +24,24 @@ interface TrackingResult {
   }>;
 }
 
-export function TrackingSearch() {
-  const [query, setQuery] = useState('');
+export function TrackingSearch({ initialQuery }: { initialQuery?: string }) {
+  const [query, setQuery] = useState(initialQuery || '');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<TrackingResult | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState('');
+  const [searched, setSearched] = useState(false);
 
-  const handleSearch = async () => {
-    if (!query.trim()) return;
+  const handleSearch = useCallback(async (q: string) => {
+    if (!q.trim()) return;
     setLoading(true);
     setResult(null);
     setNotFound(false);
     setError('');
+    setSearched(true);
 
     try {
-      const res = await fetch(`/api/tracking?number=${encodeURIComponent(query.trim())}`);
+      const res = await fetch(`/api/tracking?number=${encodeURIComponent(q.trim())}`);
       if (res.status === 404) {
         setNotFound(true);
         return;
@@ -49,13 +51,19 @@ export function TrackingSearch() {
         return;
       }
       const data = await res.json();
-      setResult(data);
+      setResult(data.data || data);
     } catch {
       setError('Network error. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (initialQuery && !searched) {
+      handleSearch(initialQuery);
+    }
+  }, [initialQuery, searched, handleSearch]);
 
   const entityIcon = result?.entityType === 'MasterAWB'
     ? <PackageCheck className="h-5 w-5 text-blue-500" />
@@ -72,12 +80,12 @@ export function TrackingSearch() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch(query)}
             placeholder="Enter tracking number (e.g. SFX-MAWB-DAR-20260526-0001)"
             className="pl-9"
           />
         </div>
-        <Button onClick={handleSearch} disabled={loading || !query.trim()}>
+        <Button onClick={() => handleSearch(query)} disabled={loading || !query.trim()}>
           {loading ? 'Searching...' : 'Track'}
         </Button>
       </div>
@@ -115,11 +123,11 @@ export function TrackingSearch() {
                  'Parcel'}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                {result.events.length} tracking event{result.events.length !== 1 ? 's' : ''}
+                {result.timeline?.length ?? 0} tracking event{(result.timeline?.length ?? 0) !== 1 ? 's' : ''}
               </p>
             </div>
           </div>
-          <TrackingTimeline events={result.events} />
+          <TrackingTimeline events={result.timeline} />
         </div>
       )}
     </div>

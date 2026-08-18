@@ -15,6 +15,7 @@ export function useRealtimeChannel(channelName: string, onMessage: MessageCallba
     const handler: messageCallback<InboundMessage> = (message) => {
       callbackRef.current(message);
     };
+    if (!channel) return;
     channel.subscribe(handler);
     return () => { channel.unsubscribe(handler); };
   }, [channelName]);

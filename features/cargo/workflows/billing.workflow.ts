@@ -2,11 +2,12 @@ import { BillingStatus } from "@/types/cargo-domain";
 import { AppError } from "@/lib/errors";
 
 export const BILLING_STATUS_TRANSITIONS: Record<BillingStatus, BillingStatus[]> = {
-  [BillingStatus.NOT_BILLED]: [BillingStatus.DRAFT],
-  [BillingStatus.DRAFT]: [BillingStatus.INVOICED, BillingStatus.UNPAID],
-  [BillingStatus.INVOICED]: [BillingStatus.PARTIAL_PAID, BillingStatus.PAID, BillingStatus.UNPAID],
-  [BillingStatus.UNPAID]: [BillingStatus.PAID, BillingStatus.CREDITED],
+  [BillingStatus.NOT_BILLED]: [BillingStatus.DRAFT, BillingStatus.WAITING_PAYMENT],
+  [BillingStatus.DRAFT]: [BillingStatus.INVOICED, BillingStatus.UNPAID, BillingStatus.WAITING_PAYMENT],
+  [BillingStatus.INVOICED]: [BillingStatus.PARTIAL_PAID, BillingStatus.PAID, BillingStatus.UNPAID, BillingStatus.WAITING_PAYMENT],
+  [BillingStatus.UNPAID]: [BillingStatus.PAID, BillingStatus.CREDITED, BillingStatus.WAITING_PAYMENT],
   [BillingStatus.PARTIAL_PAID]: [BillingStatus.PAID],
+  [BillingStatus.WAITING_PAYMENT]: [BillingStatus.PAID, BillingStatus.CREDITED],
   [BillingStatus.PAID]: [BillingStatus.REFUNDED],
   [BillingStatus.CREDITED]: [BillingStatus.PAID],
   [BillingStatus.REFUNDED]: [],

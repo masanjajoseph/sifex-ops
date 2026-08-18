@@ -566,7 +566,7 @@ export function AcceptCargoDialog({ trigger, onSuccess }: AcceptCargoDialogProps
                 </h4>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {renderField('Agent Name', mawb.agentName, (v) => updateMAWB('agentName', v), { placeholder: 'Full name' })}
-                  {renderField('Company', mawb.agentCompany, (v) => updateMAWB('agentCompany', v), { placeholder: 'Sifex Logistics' })}
+                  {renderField('Company', mawb.agentCompany, (v) => updateMAWB('agentCompany', v), { placeholder: 'Sifex Air Cargo' })}
                   {renderField('Phone', mawb.agentPhone, (v) => updateMAWB('agentPhone', v), { placeholder: '+255 xxx xxx' })}
                   {renderField('Address', mawb.agentAddress, (v) => updateMAWB('agentAddress', v), { placeholder: 'Street address' })}
                   {renderField('City', mawb.agentCity, (v) => updateMAWB('agentCity', v), { placeholder: 'City' })}

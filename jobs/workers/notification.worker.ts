@@ -1,15 +1,6 @@
-import nodemailer from "nodemailer";
 import { createWorker, enqueue } from "..";
 import { env } from "@/lib/env";
-
-const transporter = nodemailer.createTransport({
-  host: env.SMTP_HOST || "smtp.mailtrap.io",
-  port: env.SMTP_PORT ?? 587,
-  auth: {
-    user: env.SMTP_USER,
-    pass: env.SMTP_PASS,
-  },
-});
+import { sendEmail as sendEmailResend } from "@/lib/email";
 
 async function sendSms(phone: string, message: string): Promise<void> {
   if (env.SMS_PROVIDER === "twilio") {
@@ -29,12 +20,7 @@ export const notificationWorker = createWorker("notification", async (job) => {
   };
 
   if (type === "email" && to && subject && body) {
-    await transporter.sendMail({
-      from: env.SMTP_FROM || "noreply@sifex.co.tz",
-      to,
-      subject,
-      html: body,
-    });
+    await sendEmailResend({ to, subject, html: body });
   }
 
   if (type === "sms" && to && message) {

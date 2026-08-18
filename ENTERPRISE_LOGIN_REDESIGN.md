@@ -17,7 +17,7 @@
    - Responsive grid system
 
 2. **AuthBranding.tsx** (54 lines)
-   - Sifex ERP logo and branding
+   - Sifex Air Cargo logo and branding
    - 6 operational feature cards (Export, Import, Warehouse, Flight, Customs, Billing)
    - Live operations metrics (Active Shipments, Flights, Capacity, Success Rate)
    - Hover effects and glassmorphism
@@ -117,7 +117,7 @@ app/(auth)/login/
 ### Desktop Layout
 
 **Left Panel (Branding)**
-- Sifex ERP logo
+- Sifex Air Cargo logo
 - Platform description
 - 6 operational feature cards
 - 4 live metrics (Active Shipments, Flights, Capacity, Success Rate)

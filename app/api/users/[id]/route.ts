@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hash } from "bcryptjs";
-import { requirePermission, createAuditLog, apiError } from "@/features/auth/permissions.service";
+import { requireAuth, requirePermission, createAuditLog, apiError, apiForbidden } from "@/features/auth/permissions.service";
 
 const SALT_ROUNDS = 12;
 
@@ -53,14 +53,21 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { session, error } = await requirePermission("users.update");
-  if (error) return error;
+  const { session, error: authError } = await requireAuth();
+  if (authError) return authError;
 
   const { id } = await params;
 
+  const isOwnProfile = session.user.id === id;
+  const hasPermission = session.user.permissions?.includes("users.update");
+
+  if (!isOwnProfile && !hasPermission) {
+    return apiForbidden();
+  }
+
   try {
     const body = await request.json();
-    const { firstName, lastName, phone, departmentId, positionId, branchId, status, roleIds, password } = body;
+    const { firstName, lastName, email, phone, departmentId, positionId, branchId, status, roleIds, password } = body;
 
     const existing = await prisma.user.findUnique({ where: { id } });
     if (!existing || existing.deletedAt) {
@@ -71,11 +78,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     if (firstName !== undefined) updateData.firstName = firstName;
     if (lastName !== undefined) updateData.lastName = lastName;
+    if (!isOwnProfile && email !== undefined) updateData.email = email;
+    if (isOwnProfile && email !== undefined && email !== existing.email) updateData.email = email;
     if (phone !== undefined) updateData.phone = phone;
-    if (departmentId !== undefined) updateData.departmentId = departmentId || null;
-    if (positionId !== undefined) updateData.positionId = positionId || null;
-    if (branchId !== undefined) updateData.branchId = branchId || null;
-    if (status !== undefined) updateData.status = status;
+    if (!isOwnProfile && departmentId !== undefined) updateData.departmentId = departmentId || null;
+    if (!isOwnProfile && positionId !== undefined) updateData.positionId = positionId || null;
+    if (!isOwnProfile && branchId !== undefined) updateData.branchId = branchId || null;
+    if (!isOwnProfile && status !== undefined) updateData.status = status;
     if (password) updateData.password = await hash(password, SALT_ROUNDS);
 
     const user = await prisma.$transaction(async (tx) => {
@@ -88,7 +97,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         },
       });
 
-      if (roleIds !== undefined) {
+      if (!isOwnProfile && roleIds !== undefined) {
         await tx.userRole.deleteMany({ where: { userId: id } });
         if (roleIds.length > 0) {
           await tx.userRole.createMany({
@@ -124,7 +133,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       department: user!.department,
     });
   } catch (err) {
-    return apiError(err instanceof Error ? err : new Error("Failed to update user"));
+    const message = err instanceof Error ? err.message : "Failed to update user";
+    if (message.includes("Unique constraint") && message.includes("email")) {
+      return apiError(new Error("Email is already in use by another account"), 409);
+    }
+    return apiError(new Error(message), 500);
   }
 }
 

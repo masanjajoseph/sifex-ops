@@ -95,6 +95,7 @@ enum BillingStatus {
   PAID
   CREDITED
   REFUNDED
+  WAITING_PAYMENT
 }
 
 enum PaymentMethod {
@@ -154,11 +155,22 @@ model User {
   invitationExpiresAt DateTime? @map("invitation_expires_at")
 
 
+  customerId String?   @map("customer_id") @db.Uuid
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
   departmentId String?     @map("department_id") @db.Uuid
   department   Department? @relation(fields: [departmentId], references: [id])
 
   positionId String?   @map("position_id") @db.Uuid
   position   Position? @relation(fields: [positionId], references: [id])
+
+  signatureImage String? @map("signature_image")
+  signaturePin   String? @map("signature_pin")
+
+  otpCode      String?   @map("otp_code")
+  otpExpiresAt DateTime? @map("otp_expires_at")
+  otpType      String?   @map("otp_type")
+  otpAttempts  Int       @default(0) @map("otp_attempts")
 
   branchId String? @map("branch_id") @db.Uuid
   branch   Branch? @relation(fields: [branchId], references: [id])
@@ -170,8 +182,24 @@ model User {
   createdMasterAWBs MasterAWB[]   @relation("CreatedMasterAWBs")
   createdHouseAWBs  HouseAWB[]    @relation("CreatedHouseAWBs")
   createdBillings   BillingRecord[] @relation("CreatedBillings")
+  signedBillings    BillingRecord[] @relation("SignedBillings")
   processedPayments Payment[]     @relation("ProcessedPayments")
-  deliveryNotes     DeliveryNote[] @relation("DeliveryNoteCreatedBy")
+  deliveryNotes         DeliveryNote[] @relation("DeliveryNoteCreatedBy")
+  deliveryTasksCreated  DeliveryTask[] @relation("DeliveryTaskCreatedBy")
+  deliveryTasksAssigned DeliveryTask[] @relation("DeliveryTaskAssignedBy")
+
+  // Phase 3 relations
+  queueItems              WorkQueueItem[]
+  escalationOwned         Escalation[]            @relation("EscalationOwner")
+  escalationAssignedBy    Escalation[]            @relation("EscalationAssignedBy")
+  escalationActions       EscalationAction[]
+  assignmentsAssignedTo   Assignment[]            @relation("AssignedTo")
+  assignmentsAssignedBy   Assignment[]            @relation("AssignedBy")
+  assignmentsRecommendedBy Assignment[]           @relation("RecommendedBy")
+  assignmentPreference    AssignmentPreference?
+  documentsSigned         Document[]              @relation("DocumentSignedBy")
+  documentsGenerated      Document[]              @relation("DocumentGeneratedBy")
+  backgroundJobs          BackgroundJob[]
 
   passwordResetToken  String?   @map("password_reset_token")
   passwordResetExpiry DateTime? @map("password_reset_expiry")
@@ -311,6 +339,11 @@ model Customer {
   isActive Boolean @default(true) @map("is_active")
 
 
+  // Portal users
+  users    User[]
+  sessions CustomerSession[]
+  supportTickets SupportTicket[]
+
   // Cargo relations
   shipperFor  HouseAWB[] @relation("Shipper")
   receiverFor HouseAWB[] @relation("Receiver")
@@ -330,6 +363,47 @@ model Customer {
 }
 
 // ============================================
+// CUSTOMER PORTAL
+// ============================================
+
+model CustomerSession {
+  id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  customerId   String    @map("customer_id") @db.Uuid
+  customer     Customer  @relation(fields: [customerId], references: [id])
+  token        String    @unique
+  otpCode      String?   @map("otp_code")
+  otpExpiresAt DateTime? @map("otp_expires_at")
+  otpAttempts  Int       @default(0) @map("otp_attempts")
+  otpVerified  Boolean   @default(false) @map("otp_verified")
+  expiresAt    DateTime? @map("expires_at")
+  lastUsedAt   DateTime? @map("last_used_at")
+  userAgent    String?   @map("user_agent")
+  ipAddress    String?   @map("ip_address")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([customerId])
+  @@index([token])
+  @@index([otpCode])
+  @@map("customer_sessions")
+}
+
+model SupportTicket {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  customerId String    @map("customer_id") @db.Uuid
+  customer   Customer  @relation(fields: [customerId], references: [id])
+  message    String
+  response   String?
+  status     String    @default("OPEN")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@index([customerId])
+  @@index([status])
+  @@map("support_tickets")
+}
+
+// ============================================
 // ORGANIZATION STRUCTURE
 // ============================================
 
@@ -340,8 +414,9 @@ model Department {
   description String?
   isActive    Boolean @default(true) @map("is_active")
 
-  users     User[]
-  positions Position[]
+  users      User[]
+  positions  Position[]
+  workQueues WorkQueue[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -521,6 +596,13 @@ model QuotationRequest {
   quoteNumber    String @unique @map("quote_number")
   status         String @default("DRAFT")
 
+  // Shipper info (filled by customer or staff later)
+  shipperName    String? @map("shipper_name")
+  shipperCompany String? @map("shipper_company")
+  shipperAddress String? @map("shipper_address")
+  shipperPhone   String? @map("shipper_phone")
+  shipperEmail   String? @map("shipper_email")
+
   // Cargo details
   shipmentType     ShipmentType? @map("shipment_type")
   description      String?
@@ -528,12 +610,15 @@ model QuotationRequest {
   weight           Float         @default(0)
   volume           Float         @default(0)
   chargeableWeight Float         @default(0) @map("chargeable_weight")
+  length           Float         @default(0)
+  width            Float         @default(0)
+  height           Float         @default(0)
 
   // Routing
   originStationId      String? @map("origin_station_id")
   destinationStationId String? @map("destination_station_id")
 
-  // Costs
+  // Costs (filled by staff)
   freightCost       Float     @default(0) @map("freight_cost")
   transportCost     Float     @default(0) @map("transport_cost")
   warehouseCost     Float     @default(0) @map("warehouse_cost")
@@ -611,6 +696,7 @@ model MasterAWB {
   // Workflow (enterprise state machines — NO booleans)
   cargoStatus     CargoStatus     @default(INITIATED) @map("cargo_status")
   workflowStage   WorkflowStage   @default(EXPORT) @map("workflow_stage")
+  workflowStatus  String          @default("DRAFT") @map("workflow_status")
   warehouseStatus WarehouseStatus @default(RECEIVED) @map("warehouse_status")
   billingStatus   BillingStatus   @default(NOT_BILLED) @map("billing_status")
 
@@ -640,7 +726,8 @@ model MasterAWB {
   masterAWBBillingId String? @map("master_awb_billing_id") @db.Uuid
 
   // Relations
-  houseAWBs HouseAWB[]
+  houseAWBs     HouseAWB[]
+  deliveryTasks DeliveryTask[]
 
   // User tracking
   createdById String? @map("created_by_id") @db.Uuid
@@ -712,6 +799,7 @@ model HouseAWB {
   // Workflow
   cargoStatus     CargoStatus     @default(INITIATED) @map("cargo_status")
   workflowStage   WorkflowStage   @default(EXPORT) @map("workflow_stage")
+  workflowStatus  String          @default("DRAFT") @map("workflow_status")
   warehouseStatus WarehouseStatus @default(RECEIVED) @map("warehouse_status")
   billingStatus   BillingStatus   @default(NOT_BILLED) @map("billing_status")
   paymentMethod   PaymentMethod?  @map("payment_method")
@@ -721,8 +809,9 @@ model HouseAWB {
   expectedArrivalDate DateTime? @map("expected_arrival_date")
 
   // Relations
-  masterAWB MasterAWB? @relation(fields: [masterAWBId], references: [id])
-  parcels   Parcel[]
+  masterAWB     MasterAWB?    @relation(fields: [masterAWBId], references: [id])
+  parcels       Parcel[]
+  deliveryTasks DeliveryTask[]
 
   // Billing & customs
   houseAWBBillingId    String?         @map("house_awb_billing_id") @db.Uuid
@@ -940,14 +1029,86 @@ model Rider {
   phone       String?
   isActive    Boolean @default(true) @map("is_active")
 
-  user        User                 @relation(fields: [userId], references: [id])
-  assignments DeliveryAssignment[]
+  user            User                 @relation(fields: [userId], references: [id])
+  assignments     DeliveryAssignment[]
+  deliveryTasks   DeliveryTask[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
   @@map("riders")
+}
+
+// ============================================
+// DELIVERY TASKS (Phase 2)
+// ============================================
+
+enum DeliveryTaskStatus {
+  WAITING_ASSIGNMENT
+  ASSIGNED
+  STARTED
+  ARRIVED
+  DELIVERED
+  COMPLETED
+  CANCELLED
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+model DeliveryTask {
+  id            String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  taskNumber    String              @unique @map("task_number")
+  masterAWBId   String?             @map("master_awb_id") @db.Uuid
+  houseAWBId    String?             @map("house_awb_id") @db.Uuid
+  billingRecordId String?           @map("billing_record_id") @db.Uuid
+  invoiceNumber String?             @map("invoice_number")
+  customerId    String?             @map("customer_id") @db.Uuid
+  customerName  String?             @map("customer_name")
+  customerPhone String?             @map("customer_phone")
+  pickupAddress  String?            @map("pickup_address")
+  deliveryAddress String?           @map("delivery_address")
+  priority      String              @default("NORMAL")
+  status        DeliveryTaskStatus  @default(WAITING_ASSIGNMENT)
+  assignedRiderId String?           @map("assigned_rider_id") @db.Uuid
+  assignedById  String?             @map("assigned_by_id") @db.Uuid
+  assignmentNote String?            @map("assignment_note")
+  assignedAt    DateTime?           @map("assigned_at")
+  startedAt     DateTime?           @map("started_at")
+  arrivedAt     DateTime?           @map("arrived_at")
+  deliveredAt   DateTime?           @map("delivered_at")
+  completedAt   DateTime?           @map("completed_at")
+  cancelledAt   DateTime?           @map("cancelled_at")
+  cancelReason  String?             @map("cancel_reason")
+  recipientName  String?            @map("recipient_name")
+  recipientPhone String?            @map("recipient_phone")
+  signature     String?
+  signedAt      DateTime?           @map("signed_at")
+  notes         String?
+  metadata      Json?               @db.JsonB
+
+  createdById   String              @map("created_by_id") @db.Uuid
+  createdBy     User                @relation("DeliveryTaskCreatedBy", fields: [createdById], references: [id])
+  assignedRider Rider?              @relation(fields: [assignedRiderId], references: [id])
+  assignedBy    User?               @relation("DeliveryTaskAssignedBy", fields: [assignedById], references: [id])
+  masterAWB      MasterAWB?         @relation(fields: [masterAWBId], references: [id])
+  houseAWB       HouseAWB?          @relation(fields: [houseAWBId], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([status])
+  @@index([assignedRiderId])
+  @@index([masterAWBId])
+  @@index([houseAWBId])
+  @@index([taskNumber])
+  @@map("delivery_tasks")
 }
 
 model DeliveryAssignment {
@@ -1007,7 +1168,583 @@ model DeliveryNote {
 }
 
 // ============================================
-// EXCHANGE RATES
+// PHASE 3 — ENTERPRISE QUEUE ENGINE
+// ============================================
+
+enum QueueStatus {
+  ACTIVE
+  PAUSED
+  CLOSED
+}
+
+enum QueueItemStatus {
+  WAITING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+  CANCELLED
+}
+
+enum QueuePriority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+  VIP
+}
+
+model WorkQueue {
+  id            String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  queueNumber   String      @unique @map("queue_number")
+  name          String
+  code          String
+  module        String      // EXPORT, IMPORT, WAREHOUSE, BILLING, DELIVERY
+  departmentId  String?     @map("department_id") @db.Uuid
+  status        QueueStatus @default(ACTIVE)
+  description   String?
+  priority      QueuePriority @default(NORMAL)
+  maxConcurrent Int         @default(5) @map("max_concurrent")
+  averageWaitTime Float?    @map("average_wait_time") // computed
+
+  department Department? @relation(fields: [departmentId], references: [id])
+  items      WorkQueueItem[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([module, code])
+  @@index([module, status])
+  @@index([departmentId])
+  @@index([priority])
+  @@map("work_queues")
+}
+
+model WorkQueueItem {
+  id                String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  queueId           String          @map("queue_id") @db.Uuid
+  position          Int
+  status            QueueItemStatus @default(WAITING)
+  priority          QueuePriority   @default(NORMAL)
+  priorityScore     Int             @default(0) @map("priority_score")
+
+  // Entity reference
+  entityType        String          @map("entity_type")
+  entityId          String          @map("entity_id") @db.Uuid
+  entityNumber      String?         @map("entity_number") // display number (HAWB#, task#, etc.)
+  reference         String?         // customer name, destination, etc.
+
+  // Timing
+  enqueuedAt        DateTime        @default(now()) @map("enqueued_at")
+  assignedAt        DateTime?       @map("assigned_at")
+  startedAt         DateTime?       @map("started_at")
+  completedAt       DateTime?       @map("completed_at")
+  waitTime          Int?            @map("wait_time") // seconds
+  processTime       Int?            @map("process_time") // seconds
+
+  // Assignment
+  assignedUserId    String?         @map("assigned_user_id") @db.Uuid
+  assignedUser      User?           @relation(fields: [assignedUserId], references: [id])
+
+  // Notes
+  notes             String?
+  metadata          Json?           @db.JsonB
+
+  queue WorkQueue @relation(fields: [queueId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([queueId, status])
+  @@index([queueId, position])
+  @@index([entityType, entityId])
+  @@index([assignedUserId, status])
+  @@index([priority, priorityScore])
+  @@index([enqueuedAt])
+  @@map("work_queue_items")
+}
+
+// ============================================
+// PHASE 3 — ENTERPRISE SLA ENGINE
+// ============================================
+
+enum SLASeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model SLAConfig {
+  id              String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name            String
+  code            String      @unique
+  module          String      // EXPORT, IMPORT, WAREHOUSE, BILLING, DELIVERY
+  workflowStage   String      @map("workflow_stage")
+  fromStatus      String?     @map("from_status")
+  toStatus        String?     @map("to_status")
+  targetMinutes   Int         @map("target_minutes")
+  warningMinutes  Int         @default(0) @map("warning_minutes") // trigger warning before breach
+  severity        SLASeverity @default(MEDIUM)
+  isActive        Boolean     @default(true) @map("is_active")
+  departmentId    String?     @map("department_id") @db.Uuid
+  slaTrackers     SLATracker[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([module, isActive])
+  @@index([workflowStage])
+  @@index([code])
+  @@map("sla_configs")
+}
+
+model SLATracker {
+  id             String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  slaConfigId    String      @map("sla_config_id") @db.Uuid
+  entityType     String      @map("entity_type")
+  entityId       String      @map("entity_id") @db.Uuid
+  entityNumber   String?     @map("entity_number")
+
+  // Timing
+  startedAt      DateTime    @default(now()) @map("started_at")
+  targetDeadline DateTime    @map("target_deadline")
+  warningAt      DateTime?   @map("warning_at")
+  completedAt    DateTime?   @map("completed_at")
+
+  // Status
+  status         String      @default("ACTIVE") // ACTIVE, WARNING, BREACHED, COMPLETED, CANCELLED
+  durationSeconds Int?       @map("duration_seconds")
+  breachedAt     DateTime?   @map("breached_at")
+  breachReason   String?     @map("breach_reason")
+
+  slaConfig SLAConfig @relation(fields: [slaConfigId], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@index([entityType, entityId])
+  @@index([status])
+  @@index([slaConfigId, status])
+  @@index([targetDeadline])
+  @@map("sla_trackers")
+}
+
+// ============================================
+// PHASE 3 — ENTERPRISE ESCALATION ENGINE
+// ============================================
+
+enum EscalationSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum EscalationLevel {
+  LEVEL_1 // Department Supervisor
+  LEVEL_2 // Branch Manager
+  LEVEL_3 // Operations Manager
+  LEVEL_4 // Executive Team
+}
+
+enum EscalationStatus {
+  OPEN
+  ACKNOWLEDGED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model Escalation {
+  id              String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  escalationNumber String            @unique @map("escalation_number")
+  entityType      String             @map("entity_type")
+  entityId        String             @map("entity_id") @db.Uuid
+  entityNumber    String?            @map("entity_number")
+
+  // Reason
+  reason          String
+  severity        EscalationSeverity @default(HIGH)
+  currentLevel    EscalationLevel    @default(LEVEL_1) @map("current_level")
+  status          EscalationStatus   @default(OPEN)
+
+  // Source
+  source          String             // SLA_BREACH, MANUAL, RULE, SYSTEM
+  slaTrackerId    String?            @map("sla_tracker_id") @db.Uuid
+  ruleId          String?            @map("rule_id") @db.Uuid
+
+  // Ownership
+  ownerId         String?            @map("owner_id") @db.Uuid
+  owner           User?              @relation("EscalationOwner", fields: [ownerId], references: [id])
+  assignedById    String?            @map("assigned_by_id") @db.Uuid
+  assignedBy      User?              @relation("EscalationAssignedBy", fields: [assignedById], references: [id])
+
+  // Deadlines
+  deadlineAt      DateTime?          @map("deadline_at")
+  resolvedAt      DateTime?          @map("resolved_at")
+  resolution      String?            @map("resolution")
+  notes           String?
+  actions         EscalationAction[]
+
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([severity])
+  @@index([currentLevel])
+  @@index([entityType, entityId])
+  @@index([ownerId])
+  @@index([deadlineAt])
+  @@map("escalations")
+}
+
+model EscalationAction {
+  id             String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  escalationId   String             @map("escalation_id") @db.Uuid
+  action         String             // ESCALATE, ACKNOWLEDGE, ASSIGN, RESOLVE, CLOSE, NOTE
+  fromLevel      EscalationLevel?   @map("from_level")
+  toLevel        EscalationLevel?   @map("to_level")
+  note           String?
+  userId         String             @map("user_id") @db.Uuid
+  user           User?              @relation(fields: [userId], references: [id])
+
+  createdAt      DateTime           @default(now()) @map("created_at")
+
+  escalation     Escalation         @relation(fields: [escalationId], references: [id])
+
+  @@index([escalationId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("escalation_actions")
+}
+
+// ============================================
+// PHASE 3 — ENTERPRISE BUSINESS RULE ENGINE
+// ============================================
+
+enum RuleStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum RuleTrigger {
+  ON_CREATE
+  ON_STATUS_CHANGE
+  ON_SCHEDULE
+  ON_CONDITION
+  ON_WORKFLOW_TRANSITION
+}
+
+model BusinessRule {
+  id              String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name            String
+  code            String       @unique
+  description     String?
+  module          String       // EXPORT, IMPORT, WAREHOUSE, BILLING, DELIVERY, SYSTEM
+  trigger         RuleTrigger  @default(ON_CONDITION)
+  condition       Json         // Rule condition expression (JSON)
+  actions         Json         // Actions to execute (JSON array)
+  priority        Int          @default(0)
+  status          RuleStatus   @default(ACTIVE)
+  departmentId    String?      @map("department_id") @db.Uuid
+  executionCount  Int          @default(0) @map("execution_count")
+  lastExecutedAt  DateTime?    @map("last_executed_at")
+  executionLogs   RuleExecutionLog[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([module, status])
+  @@index([trigger])
+  @@index([code])
+  @@map("business_rules")
+}
+
+model RuleExecutionLog {
+  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  ruleId         String       @map("rule_id") @db.Uuid
+  entityType     String       @map("entity_type")
+  entityId       String       @map("entity_id") @db.Uuid
+  trigger        RuleTrigger
+  conditionResult Boolean     @map("condition_result")
+  actionsExecuted Json        @map("actions_executed")
+  error          String?
+  executionMs    Int          @map("execution_ms")
+  executedById   String?      @map("executed_by_id") @db.Uuid
+
+  rule BusinessRule @relation(fields: [ruleId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([ruleId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("rule_execution_logs")
+}
+
+// ============================================
+// PHASE 3 — ENTERPRISE ASSIGNMENT ENGINE
+// ============================================
+
+enum AssignmentType {
+  AUTOMATIC
+  MANUAL
+  RECOMMENDED
+  REASSIGNMENT
+}
+
+enum AssignmentEntityType {
+  DELIVERY_TASK
+  WORK_QUEUE_ITEM
+  ESCALATION
+  DOCUMENT
+}
+
+model Assignment {
+  id              String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  assignmentType  AssignmentType         @default(MANUAL) @map("assignment_type")
+  entityType      AssignmentEntityType   @map("entity_type")
+  entityId        String                @map("entity_id") @db.Uuid
+  status          String                @default("ASSIGNED") // ASSIGNED, ACCEPTED, REJECTED, STARTED, COMPLETED, CANCELLED
+
+  assignedToId    String                @map("assigned_to_id") @db.Uuid
+  assignedTo      User                  @relation("AssignedTo", fields: [assignedToId], references: [id])
+  assignedById    String?               @map("assigned_by_id") @db.Uuid
+  assignedBy      User?                 @relation("AssignedBy", fields: [assignedById], references: [id])
+  recommendedById String?               @map("recommended_by_id") @db.Uuid
+  recommendedBy   User?                 @relation("RecommendedBy", fields: [recommendedById], references: [id])
+
+  departmentId    String?               @map("department_id") @db.Uuid
+  branchId        String?               @map("branch_id") @db.Uuid
+
+  reason          String?
+  notes           String?
+
+  // Timing
+  assignedAt      DateTime              @default(now()) @map("assigned_at")
+  acceptedAt      DateTime?             @map("accepted_at")
+  rejectedAt      DateTime?             @map("rejected_at")
+  rejectedReason  String?               @map("rejected_reason")
+  startedAt       DateTime?             @map("started_at")
+  completedAt     DateTime?             @map("completed_at")
+  cancelledAt     DateTime?             @map("cancelled_at")
+
+  metadata        Json?                 @db.JsonB
+
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+
+  @@index([assignedToId, status])
+  @@index([entityType, entityId])
+  @@index([departmentId])
+  @@index([assignedAt])
+  @@map("assignments")
+}
+
+model AssignmentPreference {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  maxConcurrent   Int      @default(5) @map("max_concurrent")
+  preferredQueues String[] @map("preferred_queues")
+  preferredBranch String?  @map("preferred_branch")
+  isAvailable     Boolean  @default(true) @map("is_available")
+  maxWorkload     Int      @default(20) @map("max_workload")
+
+  user User @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId])
+  @@map("assignment_preferences")
+}
+
+// ============================================
+// PHASE 3 — ENTERPRISE DOCUMENT ENGINE
+// ============================================
+
+enum DocumentStatus {
+  DRAFT
+  GENERATED
+  SIGNED
+  ARCHIVED
+  CANCELLED
+}
+
+enum DocumentType {
+  QUOTE
+  BOOKING
+  HAWB
+  MAWB
+  MANIFEST
+  COMMERCIAL_INVOICE
+  CUSTOMER_INVOICE
+  RECEIPT
+  WAREHOUSE_RECEIPT
+  DELIVERY_NOTE
+  PROOF_OF_DELIVERY
+  CARGO_LABEL
+  PACKING_LIST
+  CUSTOM_DOCUMENT
+}
+
+model DocumentTemplate {
+  id          String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String
+  code        String       @unique
+  documentType DocumentType @map("document_type")
+  content     String       // HTML template content
+  variables   Json         // Template variable definitions
+  version     Int          @default(1)
+  isActive    Boolean      @default(true) @map("is_active")
+  departmentId String?     @map("department_id") @db.Uuid
+  documents    Document[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([documentType, isActive])
+  @@index([code])
+  @@map("document_templates")
+}
+
+model Document {
+  id              String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  documentNumber  String         @unique @map("document_number")
+  documentType    DocumentType   @map("document_type")
+  status          DocumentStatus @default(DRAFT)
+  templateId      String?        @map("template_id") @db.Uuid
+
+  // Entity
+  entityType      String         @map("entity_type")
+  entityId        String         @map("entity_id") @db.Uuid
+  entityNumber    String?        @map("entity_number")
+
+  // Content
+  title           String?
+  content         String?        // Rendered HTML
+  contentData     Json?          @map("content_data") // Data used to render
+  fileUrl         String?        @map("file_url")
+  fileSize        Int?           @map("file_size")
+  mimeType        String?        @default("application/pdf") @map("mime_type")
+
+  // Versioning
+  version         Int            @default(1)
+  previousVersionId String?      @map("previous_version_id") @db.Uuid
+
+  // Signature
+  signature       String?        // base64 signature image
+  signedById      String?        @map("signed_by_id") @db.Uuid
+  signedBy        User?          @relation("DocumentSignedBy", fields: [signedById], references: [id])
+  signedAt        DateTime?      @map("signed_at")
+
+  // Barcode / QR
+  barcode         String?
+  qrCode          String?        @map("qr_code")
+
+  // Audit
+  generatedById   String         @map("generated_by_id") @db.Uuid
+  generatedBy     User           @relation("DocumentGeneratedBy", fields: [generatedById], references: [id])
+  generatedAt     DateTime       @default(now()) @map("generated_at")
+
+  printedAt       DateTime?      @map("printed_at")
+  emailedAt       DateTime?      @map("emailed_at")
+  downloadedAt    DateTime?      @map("downloaded_at")
+
+  metadata        Json?          @db.JsonB
+  notes           String?
+
+  template DocumentTemplate? @relation(fields: [templateId], references: [id])
+  previousVersion Document?   @relation("DocumentVersion", fields: [previousVersionId], references: [id])
+  nextVersions    Document[]   @relation("DocumentVersion")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([documentType, status])
+  @@index([entityType, entityId])
+  @@index([documentNumber])
+  @@index([templateId])
+  @@index([generatedById])
+  @@index([signedById])
+  @@map("documents")
+}
+
+// ============================================
+// PHASE 3 — ENTERPRISE BACKGROUND JOB ENGINE
+// ============================================
+
+enum JobStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  RETRYING
+}
+
+enum JobPriority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+model BackgroundJob {
+  id              String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  jobNumber       String       @unique @map("job_number")
+  jobType         String       @map("job_type") // INVOICE_GENERATION, PDF_GENERATION, EMAIL, SMS, NOTIFICATION, TCRA_RETRY, KPI_REFRESH, REPORT_GENERATION, etc.
+  status          JobStatus    @default(PENDING)
+  priority        JobPriority  @default(NORMAL)
+  queueName       String       @default("default") @map("queue_name")
+
+  // Entity
+  entityType      String?      @map("entity_type")
+  entityId        String?      @map("entity_id") @db.Uuid
+
+  // Payload
+  payload         Json         @db.JsonB
+  result          Json?        @db.JsonB
+  error           String?
+
+  // Timing
+  scheduledAt     DateTime?    @map("scheduled_at")
+  startedAt       DateTime?    @map("started_at")
+  completedAt     DateTime?    @map("completed_at")
+  durationMs      Int?         @map("duration_ms")
+
+  // Retry
+  attempts        Int          @default(0)
+  maxAttempts     Int          @default(3) @map("max_attempts")
+  nextRetryAt     DateTime?    @map("next_retry_at")
+  lastError       String?      @map("last_error")
+
+  // Created by
+  createdById     String       @map("created_by_id") @db.Uuid
+  createdBy       User         @relation(fields: [createdById], references: [id])
+
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  @@index([status, queueName])
+  @@index([jobType, status])
+  @@index([scheduledAt])
+  @@index([priority])
+  @@index([entityType, entityId])
+  @@index([nextRetryAt])
+  @@map("background_jobs")
+}
+
+// ============================================
+// PHASE 3 — EXCHANGE RATES (existing section preserved)
 // ============================================
 
 model ExchangeRateSnapshot {
@@ -1042,6 +1779,8 @@ model DomainEvent {
   @@index([aggregateType, eventType])
   @@index([occurredAt])
   @@index([eventType])
+  @@index([eventType, occurredAt])
+  @@index([aggregateId, aggregateType, version])
   @@map("domain_events")
 }
 
@@ -1056,8 +1795,16 @@ model AuditLog {
   entity    String
   entityId  String? @map("entity_id") @db.Uuid
   metadata  Json?
-  ipAddress String? @map("ip_address")
-  userAgent String? @map("user_agent")
+
+  // Phase 2 enterprise audit fields
+  departmentId String? @map("department_id") @db.Uuid
+  workflowStage String? @map("workflow_stage")
+  oldStatus    String? @map("old_status")
+  newStatus    String? @map("new_status")
+  ipAddress    String? @map("ip_address")
+  userAgent    String? @map("user_agent")
+  device       String?
+  browser      String?
 
   user User @relation("CreatedBy", fields: [userId], references: [id])
 
@@ -1066,6 +1813,9 @@ model AuditLog {
   @@index([userId])
   @@index([entity, entityId])
   @@index([createdAt])
+  @@index([departmentId])
+  @@index([workflowStage])
+  @@index([oldStatus, newStatus])
   @@map("audit_logs")
 }
 
@@ -1161,6 +1911,16 @@ model ShipmentTimeline {
   description   String?
   userId        String  @map("user_id") @db.Uuid
   stationId     String? @map("station_id")
+
+  // Phase 2 enterprise fields
+  workflowStage String? @map("workflow_stage")
+  oldStatus     String? @map("old_status")
+  newStatus     String? @map("new_status")
+  action        String?
+  departmentId  String? @map("department_id") @db.Uuid
+  branchId      String? @map("branch_id") @db.Uuid
+  notes         String?
+
   visibility    String  @default("INTERNAL")
   metadata      Json?
   latitude      Float?  @map("latitude")
@@ -1173,6 +1933,11 @@ model ShipmentTimeline {
   @@index([aggregateId, visibility])
   @@index([eventType])
   @@index([createdAt])
+  @@index([workflowStage])
+  @@index([departmentId])
+  @@index([oldStatus, newStatus])
+  @@index([userId, createdAt])
+  @@index([aggregateType, eventType, createdAt])
   @@map("shipment_timeline")
 }
 
@@ -1272,6 +2037,13 @@ model BillingRecord {
   createdById String? @map("created_by_id") @db.Uuid
   createdBy   User?   @relation("CreatedBillings", fields: [createdById], references: [id])
 
+  signedById String? @map("signed_by_id") @db.Uuid
+  signedBy   User?   @relation("SignedBillings", fields: [signedById], references: [id])
+  signedAt    DateTime? @map("signed_at")
+
+  exchangeRate      Float?    @map("exchange_rate")
+  exchangeRateDate  DateTime? @map("exchange_rate_date")
+
   invoicedAt     DateTime? @map("invoiced_at")
   firstPaymentAt DateTime? @map("first_payment_at")
   lastPaymentAt  DateTime? @map("last_payment_at")
@@ -1345,6 +2117,157 @@ model TcraOutbox {
   @@index([status])
   @@index([createdAt])
   @@map("tcra_outbox")
+}
+
+model Notification {
+  id         String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId     String               @map("user_id") @db.Uuid
+  title      String
+  message    String
+  type       String
+  category   String               @default("OPERATIONS") @map("category") // OPERATIONS, WAREHOUSE, BILLING, DELIVERY, EXECUTIVE, SECURITY, WORKFLOW
+  priority   NotificationPriority @default(NORMAL)
+  deepLink   String?              @map("deep_link")
+  entityType String?              @map("entity_type")
+  entityId   String?             @map("entity_id")
+  metadata   Json?               @db.JsonB
+  readAt     DateTime?           @map("read_at")
+  acknowledgedAt DateTime?       @map("acknowledged_at")
+  archivedAt   DateTime?         @map("archived_at")
+  createdAt  DateTime            @default(now()) @map("created_at")
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@index([userId, category])
+  @@index([userId, readAt, archivedAt])
+  @@index([priority])
+  @@index([category])
+  @@index([acknowledgedAt])
+  @@index([archivedAt])
+  @@index([entityType, entityId])
+  @@index([type, createdAt])
+  @@map("notifications")
+}
+
+// ============================================
+// PHASE 3.1 — ENTERPRISE ACTIVITY FEED
+// ============================================
+
+model ActivityFeedEntry {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  eventType     String   @map("event_type")
+  title         String
+  description   String?
+
+  // Entity
+  entityType    String   @map("entity_type")
+  entityId      String   @map("entity_id") @db.Uuid
+  entityNumber  String?  @map("entity_number")
+
+  // Actor
+  userId        String   @map("user_id") @db.Uuid
+  userName      String   @map("user_name")
+  departmentId  String?  @map("department_id") @db.Uuid
+  departmentName String? @map("department_name")
+  branchId      String?  @map("branch_id") @db.Uuid
+  branchName    String?  @map("branch_name")
+
+  // Workflow
+  workflowStage String?  @map("workflow_stage")
+  oldStatus     String?  @map("old_status")
+  newStatus     String?  @map("new_status")
+  action        String?
+
+  // Priority
+  priority      String   @default("NORMAL") // LOW, NORMAL, HIGH, CRITICAL
+
+  // Metadata
+  metadata      Json?    @db.JsonB
+
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([departmentId])
+  @@index([eventType])
+  @@index([branchId])
+  @@index([workflowStage])
+  @@index([priority])
+  @@index([createdAt, entityType])
+  @@map("activity_feed_entries")
+}
+
+// ============================================
+// PHASE 3.1 — SMS HISTORY (BONGA INTEGRATION)
+// ============================================
+
+model SmsHistory {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  phoneNumber     String   @map("phone_number")
+  message         String
+  templateCode    String?  @map("template_code")
+  senderId        String?  @map("sender_id")
+
+  // Entity
+  entityType      String?  @map("entity_type")
+  entityId        String?  @map("entity_id") @db.Uuid
+  entityNumber    String?  @map("entity_number")
+
+  // Provider
+  provider        String   @default("bonga")    // bonga, twilio, log
+  providerMessageId String? @map("provider_message_id")
+  providerResponse Json?   @map("provider_response") @db.JsonB
+
+  // Status
+  status          String   @default("PENDING") // PENDING, SENT, DELIVERED, FAILED, REJECTED
+  deliveryStatus  String?  @map("delivery_status") // DELIVERED, UNDELIVERED, UNKNOWN
+  deliveryAt      DateTime? @map("delivered_at")
+  error           String?
+
+  // Retry
+  attempts        Int      @default(0)
+  maxAttempts     Int      @default(3) @map("max_attempts")
+  lastAttemptAt   DateTime? @map("last_attempt_at")
+  nextRetryAt     DateTime? @map("next_retry_at")
+
+  // Background job
+  backgroundJobId String?  @map("background_job_id") @db.Uuid
+
+  // Metadata
+  metadata        Json?    @db.JsonB
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([phoneNumber])
+  @@index([entityType, entityId])
+  @@index([deliveryStatus])
+  @@index([createdAt])
+  @@index([backgroundJobId])
+  @@index([nextRetryAt])
+  @@map("sms_history")
+}
+
+// ============================================
+// PHASE 3.1 — SEARCH HISTORY
+// ============================================
+
+model SearchHistory {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  query      String
+  entityType String?  @map("entity_type")
+  resultCount Int     @default(0) @map("result_count")
+  filters    Json?    @db.JsonB
+
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([query])
+  @@index([userId])
+  @@map("search_history")
 }
 
 model TcraSnapshotLog {

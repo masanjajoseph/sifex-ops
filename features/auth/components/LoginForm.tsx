@@ -51,7 +51,7 @@ export function LoginForm() {
           <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
             <Plane className="w-5 h-5 text-white" />
           </div>
-          <span className="text-2xl font-bold text-gray-900 dark:text-white">Sifex ERP</span>
+          <span className="text-2xl font-bold text-gray-900 dark:text-white">Sifex Air Cargo</span>
         </div>
 
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-8">

@@ -256,6 +256,21 @@ export const SYSTEM_MODULES: ModuleDefinition[] = [
     },
   },
   {
+    id: "hawb-loading",
+    name: "HAWB Loading",
+    description: "Assign unassigned HAWBs to MAWBs",
+    icon: "Package",
+    path: "/workspace/hawb-loading",
+    color: "bg-yellow-500",
+    category: ModuleCategory.OPERATIONS,
+    requiredPermissions: ["master-awb.update"],
+    mobileVisible: true,
+    sidebarConfig: {
+      order: 16,
+      group: "Operations",
+    },
+  },
+  {
     id: "flights",
     name: "Flights",
     description: "Flight scheduling and cargo space management",

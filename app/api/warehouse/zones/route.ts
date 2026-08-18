@@ -13,10 +13,19 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   }
 
   const { searchParams } = new URL(req.url);
-  const stationId = searchParams.get("stationId");
+  let stationId: string | null = searchParams.get("stationId");
 
   if (!stationId) {
-    return apiError(new Error("Query parameter 'stationId' is required"), 400);
+    const userStations = session.user.stations as string[] | undefined;
+    stationId = (userStations && userStations.length > 0) ? userStations[0] : null;
+  }
+
+  if (!stationId && !session.user.stations?.length) {
+    const firstZone = await prisma.warehouseZone.findFirst({ where: { deletedAt: null }, select: { stationId: true } });
+    if (firstZone) stationId = firstZone.stationId;
+  }
+  if (!stationId) {
+    return apiSuccess([]);
   }
 
   const zones = await prisma.warehouseZone.findMany({

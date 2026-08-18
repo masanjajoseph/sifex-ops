@@ -7,14 +7,20 @@ export type AuditAction =
   | "PASSWORD_RESET" | "PERMISSION_CHANGE"
   | "APPROVE" | "REJECT" | "EXPORT";
 
-interface AuditParams {
+export interface AuditParams {
   userId: string;
   action: AuditAction;
   entity: string;
   entityId?: string;
+  departmentId?: string;
+  workflowStage?: string;
+  oldStatus?: string;
+  newStatus?: string;
   metadata?: Record<string, unknown>;
   ipAddress?: string;
   userAgent?: string;
+  device?: string;
+  browser?: string;
 }
 
 export async function createAuditLog(params: AuditParams): Promise<void> {
@@ -25,13 +31,18 @@ export async function createAuditLog(params: AuditParams): Promise<void> {
         action: params.action,
         entity: params.entity,
         entityId: params.entityId,
+        departmentId: params.departmentId,
+        workflowStage: params.workflowStage,
+        oldStatus: params.oldStatus,
+        newStatus: params.newStatus,
         metadata: (params.metadata ?? {}) as any,
         ipAddress: params.ipAddress,
         userAgent: params.userAgent,
+        device: params.device,
+        browser: params.browser,
       },
     });
   } catch (error) {
-    // Audit failures must never crash the main flow
     logger.error("Failed to write audit log", error, "AuditService");
   }
 }

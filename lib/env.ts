@@ -4,7 +4,7 @@ const envSchema = z.object({
   // App
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
-  NEXT_PUBLIC_APP_NAME: z.string().default("Sifex ERP"),
+  NEXT_PUBLIC_APP_NAME: z.string().default("Sifex Air Cargo"),
 
   // Database
   DATABASE_URL: z.string().min(1),
@@ -37,17 +37,21 @@ const envSchema = z.object({
   BULL_WORKER_CONCURRENCY: z.coerce.number().default(5),
 
   // SMS
-  SMS_PROVIDER: z.enum(["twilio", "log"]).default("log"),
+  SMS_PROVIDER: z.enum(["twilio", "bonga", "log"]).default("log"),
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_PHONE: z.string().optional(),
 
-  // Email
-  SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z.coerce.number().optional(),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-  SMTP_FROM: z.string().optional(),
+  // Bonga SMS (Tanzania)
+  BONGA_API_KEY: z.string().optional(),
+  BONGA_API_SECRET: z.string().optional(),
+  BONGA_SENDER_ID: z.string().default("SIFEX"),
+  BONGA_API_URL: z.string().default("https://api.bonga.co.tz/v1"),
+  BONGA_CALLBACK_URL: z.string().optional(),
+
+  // Email (Resend)
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
 
   // Sentry
   SENTRY_DSN: z.string().optional(),

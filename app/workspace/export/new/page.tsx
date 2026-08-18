@@ -242,7 +242,7 @@ export default function NewExportPage() {
           flightNumber,
           departureTime: `${departureDate}T${departureTime}:00`,
           arrivalTime: undefined,
-          senderName: 'Sifex Logistics',
+          senderName: 'Sifex Air Cargo',
           senderAddress: '',
           shipmentType: hawbs.find(h => h.awbType)?.awbType || 'CAN_GUANGZHOU',
           paymentMode: 'PP', currency: 'USD',

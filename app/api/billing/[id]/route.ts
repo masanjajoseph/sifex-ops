@@ -18,7 +18,14 @@ export const GET = withErrorHandler(async (req: NextRequest, { params }: { param
   const { id } = await params;
   const record = await prisma.billingRecord.findUnique({
     where: { id, deletedAt: null },
-    include: { billingCharges: true, payments: true, customer: true },
+    include: {
+      billingCharges: true,
+      payments: true,
+      customer: true,
+      signedBy: {
+        select: { id: true, firstName: true, lastName: true, signatureImage: true, position: { select: { name: true } } },
+      },
+    },
   });
 
   if (!record) {
@@ -28,7 +35,13 @@ export const GET = withErrorHandler(async (req: NextRequest, { params }: { param
   const houseAWB = record.houseAWBId
     ? await prisma.houseAWB.findUnique({
         where: { id: record.houseAWBId },
-        include: {
+        select: {
+          id: true,
+          houseAWBNumber: true,
+          trackingNumber: true,
+          chargeableWeight: true,
+          freightRate: true,
+          description: true,
           shipper: { select: { name: true, phone: true, address: true, city: true, email: true } },
           masterAWB: { select: { awbNumber: true, shipmentType: true, originStation: { select: { name: true, code: true } } } },
         },
@@ -36,11 +49,32 @@ export const GET = withErrorHandler(async (req: NextRequest, { params }: { param
     : null;
 
   const latestRate = await prisma.exchangeRateSnapshot.findFirst({ orderBy: { validAt: 'desc' } });
-  const exchangeRate = latestRate && typeof latestRate.rates === 'object' && latestRate.rates !== null
-    ? (latestRate.rates as Record<string, number>)['TZS'] ?? 2500
-    : 2500;
+  const sysSettings = await prisma.systemSettings.findFirst();
+  let exchangeRate = 2500;
+  if (latestRate && typeof latestRate.rates === 'object' && latestRate.rates !== null) {
+    const rates = latestRate.rates as Record<string, unknown>;
+    exchangeRate = (rates.exchangeRate as number)
+      ?? (rates.TZS as number)
+      ?? sysSettings?.exchangeRate
+      ?? 2500;
+  } else if (sysSettings?.exchangeRate) {
+    exchangeRate = sysSettings.exchangeRate;
+  }
 
-  return apiSuccess({ ...record, houseAWB, exchangeRate });
+  const exchangeRateDate = latestRate?.validAt || null;
+
+  return apiSuccess({
+    ...record,
+    houseAWB,
+    exchangeRate,
+    exchangeRateDate,
+    signedBy: record.signedBy ? {
+      name: `${record.signedBy.firstName} ${record.signedBy.lastName}`,
+      title: record.signedBy.position?.name || '',
+      signatureImage: record.signedBy.signatureImage,
+    } : null,
+    signedAt: record.signedAt,
+  });
 });
 
 export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
@@ -109,13 +143,26 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
 
   const updated = await prisma.billingRecord.findUnique({
     where: { id },
-    include: { billingCharges: true, payments: true, customer: true },
+    include: {
+      billingCharges: true,
+      payments: true,
+      customer: true,
+      signedBy: {
+        select: { id: true, firstName: true, lastName: true, signatureImage: true, position: { select: { name: true } } },
+      },
+    },
   });
 
   const houseAWB = updated?.houseAWBId
     ? await prisma.houseAWB.findUnique({
         where: { id: updated.houseAWBId },
-        include: {
+        select: {
+          id: true,
+          houseAWBNumber: true,
+          trackingNumber: true,
+          chargeableWeight: true,
+          freightRate: true,
+          description: true,
           shipper: { select: { name: true, phone: true, address: true, city: true, email: true } },
           masterAWB: { select: { awbNumber: true, shipmentType: true, originStation: { select: { name: true, code: true } } } },
         },
@@ -123,11 +170,32 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
     : null;
 
   const latestRate = await prisma.exchangeRateSnapshot.findFirst({ orderBy: { validAt: 'desc' } });
-  const exchangeRate = latestRate && typeof latestRate.rates === 'object' && latestRate.rates !== null
-    ? (latestRate.rates as Record<string, number>)['TZS'] ?? 2500
-    : 2500;
+  const sysSettings = await prisma.systemSettings.findFirst();
+  let exchangeRate = 2500;
+  if (latestRate && typeof latestRate.rates === 'object' && latestRate.rates !== null) {
+    const rates = latestRate.rates as Record<string, unknown>;
+    exchangeRate = (rates.exchangeRate as number)
+      ?? (rates.TZS as number)
+      ?? sysSettings?.exchangeRate
+      ?? 2500;
+  } else if (sysSettings?.exchangeRate) {
+    exchangeRate = sysSettings.exchangeRate;
+  }
 
-  return apiSuccess({ ...updated, houseAWB, exchangeRate });
+  const exchangeRateDate = latestRate?.validAt || null;
+
+  return apiSuccess({
+    ...updated,
+    houseAWB,
+    exchangeRate,
+    exchangeRateDate,
+    signedBy: updated?.signedBy ? {
+      name: `${updated.signedBy.firstName} ${updated.signedBy.lastName}`,
+      title: updated.signedBy.position?.name || '',
+      signatureImage: updated.signedBy.signatureImage,
+    } : null,
+    signedAt: updated?.signedAt,
+  });
 });
 
 export const POST = withErrorHandler(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
@@ -263,7 +331,13 @@ export const POST = withErrorHandler(async (req: NextRequest, { params }: { para
   const houseAWB = updated?.houseAWBId
     ? await prisma.houseAWB.findUnique({
         where: { id: updated.houseAWBId },
-        include: {
+        select: {
+          id: true,
+          houseAWBNumber: true,
+          trackingNumber: true,
+          chargeableWeight: true,
+          freightRate: true,
+          description: true,
           shipper: { select: { name: true, phone: true, address: true, city: true, email: true } },
           masterAWB: { select: { awbNumber: true, shipmentType: true, originStation: { select: { name: true, code: true } } } },
         },

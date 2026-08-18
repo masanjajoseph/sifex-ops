@@ -37,6 +37,15 @@ interface Department {
   _count?: { users: number; positions: number };
 }
 
+interface Position {
+  id: string;
+  name: string;
+  code: string;
+  departmentId: string;
+  department?: { id: string; name: string; code: string };
+  _count?: { users: number };
+}
+
 interface Role {
   id: string;
   name: string;
@@ -58,7 +67,7 @@ interface Permission {
   description: string | null;
 }
 
-type DialogMode = 'create' | 'edit' | 'invite' | 'roles' | 'role-permissions' | null;
+type DialogMode = 'create' | 'edit' | 'invite' | 'roles' | 'role-permissions' | 'dept-positions' | null;
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'pending'> = {
   ACTIVE: 'success',
@@ -77,16 +86,25 @@ export default function UsersPage() {
   const [roleFilter, setRoleFilter] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [allPositions, setAllPositions] = useState<Position[]>([]);
   const [rolesList, setRolesList] = useState<Role[]>([]);
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [formData, setFormData] = useState({
-    email: '', firstName: '', lastName: '', phone: '', departmentId: '', roleIds: [] as string[],
+    email: '', firstName: '', lastName: '', phone: '', departmentId: '', positionId: '', roleIds: [] as string[],
   });
   const [roleFormData, setRoleFormData] = useState({ name: '', code: '', description: '', permissionIds: [] as string[] });
   const [permissionsGrouped, setPermissionsGrouped] = useState<GroupedPermission>({});
   const [permissionsList, setPermissionsList] = useState<Permission[]>([]);
+
+  const [deptForm, setDeptForm] = useState({ name: '', code: '', description: '' });
+  const [posForm, setPosForm] = useState({ name: '', code: '', description: '', departmentId: '' });
+  const [selectedDeptForPos, setSelectedDeptForPos] = useState<string | null>(null);
+  const [deptSaving, setDeptSaving] = useState(false);
+  const [posSaving, setPosSaving] = useState(false);
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const limit = 20;
@@ -122,6 +140,16 @@ export default function UsersPage() {
     } catch {}
   }, []);
 
+  const fetchPositions = useCallback(async () => {
+    try {
+      const res = await fetch('/api/positions');
+      if (res.ok) {
+        const data = await res.json();
+        setAllPositions(data.positions);
+      }
+    } catch {}
+  }, []);
+
   const fetchRoles = useCallback(async () => {
     try {
       const res = await fetch('/api/roles');
@@ -144,7 +172,18 @@ export default function UsersPage() {
   }, []);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
-  useEffect(() => { fetchDepartments(); fetchRoles(); }, []);
+  useEffect(() => { fetchDepartments(); fetchRoles(); fetchPositions(); }, []);
+
+  useEffect(() => {
+    if (formData.departmentId) {
+      setPositions(allPositions.filter(p => p.departmentId === formData.departmentId));
+      const posInDept = allPositions.some(p => p.departmentId === formData.departmentId && p.id === formData.positionId);
+      if (!posInDept) setFormData(f => ({ ...f, positionId: '' }));
+    } else {
+      setPositions([]);
+      setFormData(f => ({ ...f, positionId: '' }));
+    }
+  }, [formData.departmentId, allPositions]);
   useEffect(() => { if (dialogMode === 'role-permissions' || dialogMode === 'roles') fetchPermissions(); }, [dialogMode]);
 
   const stats = useMemo(() => {
@@ -206,6 +245,15 @@ export default function UsersPage() {
       ),
     },
     {
+      accessorKey: 'position',
+      header: 'Position',
+      cell: ({ row }) => (
+        <span className="text-sm text-gray-600 dark:text-gray-400">
+          {row.original.position?.name || '—'}
+        </span>
+      ),
+    },
+    {
       accessorKey: 'passwordResetRequired',
       header: 'First Login',
       cell: ({ row }) => (
@@ -251,7 +299,7 @@ export default function UsersPage() {
         throw new Error(data.error || 'Failed to create user');
       }
       setDialogMode(null);
-      setFormData({ email: '', firstName: '', lastName: '', phone: '', departmentId: '', roleIds: [] });
+      setFormData({ email: '', firstName: '', lastName: '', phone: '', departmentId: '', positionId: '', roleIds: [] });
       fetchUsers();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create user');
@@ -337,21 +385,24 @@ export default function UsersPage() {
 
   const openCreateDialog = () => {
     setSelectedUser(null);
-    setFormData({ email: '', firstName: '', lastName: '', phone: '', departmentId: '', roleIds: [] });
+    setFormData({ email: '', firstName: '', lastName: '', phone: '', departmentId: '', positionId: '', roleIds: [] });
     setError('');
     setDialogMode('create');
   };
 
   const openEditDialog = (user: User) => {
     setSelectedUser(user);
+    const deptId = user.department?.id || '';
     setFormData({
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
       phone: user.phone || '',
-      departmentId: user.department?.id || '',
+      departmentId: deptId,
+      positionId: user.position?.id || '',
       roleIds: user.roles.map((r) => r.id),
     });
+    setPositions(deptId ? allPositions.filter(p => p.departmentId === deptId) : []);
     setError('');
     setDialogMode('edit');
   };
@@ -376,6 +427,9 @@ export default function UsersPage() {
         breadcrumbs={[{ label: 'Workspace', href: '/workspace' }, { label: 'User Management' }]}
         action={
           <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => { fetchDepartments(); setDialogMode('dept-positions'); }}>
+              <Shield className="mr-1 h-4 w-4" /> Dept & Positions
+            </Button>
             <Button size="sm" variant="outline" onClick={() => setDialogMode('roles')}>
               <Shield className="mr-1 h-4 w-4" /> Roles
             </Button>
@@ -513,6 +567,23 @@ export default function UsersPage() {
                 </select>
               </div>
               <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Position</label>
+                <select
+                  value={formData.positionId}
+                  onChange={(e) => setFormData({ ...formData, positionId: e.target.value })}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
+                  disabled={!formData.departmentId}
+                >
+                  <option value="">No Position</option>
+                  {positions.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                {!formData.departmentId && (
+                  <p className="mt-1 text-xs text-gray-400">Select a department first</p>
+                )}
+              </div>
+              <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Roles</label>
                 <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 p-2 dark:border-gray-700">
                   {rolesList.map((r) => (
@@ -636,6 +707,108 @@ export default function UsersPage() {
                 {saving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
                 Save Permissions
               </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Department & Positions Dialog */}
+      {dialogMode === 'dept-positions' ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setDialogMode(null)}>
+          <div className="w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-xl bg-white p-6 shadow-xl dark:bg-gray-900" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Departments & Positions</h3>
+              <button onClick={() => setDialogMode(null)} className="rounded-md p-1 text-gray-400 hover:text-gray-600"><X className="h-5 w-5" /></button>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Add Department */}
+              <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+                <h4 className="mb-3 text-sm font-medium text-gray-900 dark:text-white">New Department</h4>
+                <div className="space-y-3">
+                  <Input placeholder="Name" value={deptForm.name} onChange={e => setDeptForm({ ...deptForm, name: e.target.value })} />
+                  <Input placeholder="Code (e.g. WH)" value={deptForm.code} onChange={e => setDeptForm({ ...deptForm, code: e.target.value })} />
+                  <Input placeholder="Description (optional)" value={deptForm.description} onChange={e => setDeptForm({ ...deptForm, description: e.target.value })} />
+                  <Button size="sm" className="w-full" disabled={deptSaving || !deptForm.name || !deptForm.code} onClick={async () => {
+                    setDeptSaving(true);
+                    try {
+                      const res = await fetch('/api/departments', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(deptForm),
+                      });
+                      if (res.ok) { setDeptForm({ name: '', code: '', description: '' }); fetchDepartments(); }
+                    } catch {}
+                    setDeptSaving(false);
+                  }}>
+                    {deptSaving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                    Create Department
+                  </Button>
+                </div>
+              </div>
+
+              {/* Add Position */}
+              <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+                <h4 className="mb-3 text-sm font-medium text-gray-900 dark:text-white">New Position</h4>
+                <div className="space-y-3">
+                  <select
+                    value={posForm.departmentId}
+                    onChange={e => setPosForm({ ...posForm, departmentId: e.target.value })}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
+                  >
+                    <option value="">Select department</option>
+                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                  <Input placeholder="Name" value={posForm.name} onChange={e => setPosForm({ ...posForm, name: e.target.value })} />
+                  <Input placeholder="Code (e.g. WH_MGR)" value={posForm.code} onChange={e => setPosForm({ ...posForm, code: e.target.value })} />
+                  <Input placeholder="Description (optional)" value={posForm.description} onChange={e => setPosForm({ ...posForm, description: e.target.value })} />
+                  <Button size="sm" className="w-full" disabled={posSaving || !posForm.name || !posForm.code || !posForm.departmentId} onClick={async () => {
+                    setPosSaving(true);
+                    try {
+                      const res = await fetch('/api/positions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(posForm),
+                      });
+                      if (res.ok) { setPosForm({ name: '', code: '', description: '', departmentId: '' }); fetchPositions(); }
+                    } catch {}
+                    setPosSaving(false);
+                  }}>
+                    {posSaving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                    Create Position
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Existing list */}
+            <div className="mt-6 space-y-4">
+              {departments.map(dept => {
+                const deptPositions = allPositions.filter(p => p.departmentId === dept.id);
+                return (
+                  <div key={dept.id} className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+                    <div className="mb-2 flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-semibold text-gray-900 dark:text-white">{dept.name}</span>
+                        <span className="ml-2 text-xs text-gray-400">{dept.code}</span>
+                      </div>
+                      <span className="text-xs text-gray-400">{dept._count?.users ?? 0} users &middot; {deptPositions.length} positions</span>
+                    </div>
+                    {deptPositions.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {deptPositions.map(p => (
+                          <span key={p.id} className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                            {p.name}
+                            <span className="ml-1 text-gray-400">({p._count?.users ?? 0})</span>
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400">No positions yet</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

@@ -86,7 +86,7 @@ export default function ParcelsPage() {
                 className="flex cursor-pointer items-center justify-between px-5 py-3 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
                 onClick={() => {
                   const mawbId = p.houseAWB?.masterAWB?.id;
-                  if (mawbId) router.push(`/workspace/export/${mawbId}`);
+                  if (mawbId) router.push(`/workspace/master-awb/${mawbId}`);
                 }}
               >
                 <div className="flex items-center gap-3">

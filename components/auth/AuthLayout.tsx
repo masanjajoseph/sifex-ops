@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import Image from "next/image";
+import { Logo } from "@/components/ui/Logo";
 import { LoginHero } from "./LoginHero";
 import { AuthCard } from "./AuthCard";
 import { SecurityBadge } from "./SecurityBadge";
@@ -62,7 +62,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
           {/* Footer message */}
           <div className="space-y-2">
             <p className="text-xs text-white/40 leading-relaxed">
-              Sifex ERP | International Air Cargo Operations Platform
+              Sifex Air Cargo | International Air Cargo Operations Platform
             </p>
             <div className="flex items-center gap-2 text-[11px] text-white/30 font-mono">
               <span>Enterprise</span>
@@ -79,28 +79,12 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       <div className="flex-1 flex flex-col lg:bg-muted/30 relative">
         {/* Mobile header */}
         <div className="lg:hidden px-4 py-4 border-b border-border/50 bg-card">
-          <Image
-            src="/logo.png"
-            alt="Sifex ERP"
-            width={100}
-            height={41}
-            priority
-            className="object-contain"
-            style={{ width: "auto", height: 32 }}
-          />
+          <Logo size="sm" priority container />
         </div>
 
         {/* Logo above card — visible on desktop, hidden on mobile (mobile has its own header) */}
-        <div className="hidden lg:flex justify-center pt-6 pb-2">
-          <Image
-            src="/logo.png"
-            alt="Sifex ERP"
-            width={130}
-            height={53}
-            priority
-            className="object-contain"
-            style={{ width: "auto", height: 48 }}
-          />
+        <div className="hidden lg:flex justify-center pt-60 pb-1">
+          <Logo size="lg" priority container />
         </div>
 
         {/* Main auth card area */}
@@ -113,7 +97,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
           <div className="max-w-[420px] mx-auto space-y-3">
             <SecurityBadge />
             <p className="text-xs text-muted-foreground text-center">
-              &copy; 2025 Sifex ERP. All rights reserved. Enterprise cargo operations platform.
+              &copy; 2025 Sifex Courier. All rights reserved. Enterprise cargo operations platform.
             </p>
           </div>
         </div>

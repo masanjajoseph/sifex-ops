@@ -1,16 +1,33 @@
-import nodemailer from "nodemailer";
+import { sendEmail } from "@/lib/email";
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "localhost",
-  port: parseInt(process.env.SMTP_PORT || "587"),
-  secure: process.env.SMTP_SECURE === "true",
-  auth: {
-    user: process.env.SMTP_USER || "",
-    pass: process.env.SMTP_PASSWORD || "",
-  },
-});
-
-const FROM = process.env.SMTP_FROM || "noreply@sifex.com";
+const baseHtml = (content: string) => `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{margin:0;padding:0;background:#f4f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+  .container{max-width:600px;margin:0 auto;padding:24px 16px}
+  .header{background:linear-gradient(135deg,#d00020,#a00018);border-radius:12px 12px 0 0;padding:32px 24px;text-align:center}
+  .header h1{margin:0;color:#fff;font-size:22px;letter-spacing:-0.3px}
+  .header p{margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:14px}
+  .body{background:#fff;border-radius:0 0 12px 12px;padding:32px 24px;box-shadow:0 1px 3px rgba(0,0,0,0.08)}
+  .footer{text-align:center;padding:20px 16px;font-size:12px;color:#888}
+  .btn{display:inline-block;background:#d00020;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600}
+  .code{background:#f4f4f6;border-radius:8px;padding:16px;text-align:center;font-size:24px;font-weight:700;letter-spacing:4px;color:#d00020;margin:20px 0}
+  .box{background:#f9f9fb;border-radius:8px;padding:16px;margin:16px 0;font-size:13px;border:1px solid #eee}
+  .box strong{color:#333}
+  .box code{background:#eee;padding:2px 8px;border-radius:4px;font-size:14px;color:#d00020}
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header"><h1>SIFEX</h1><p>Air Cargo</p></div>
+    <div class="body">${content}</div>
+    <div class="footer">
+      <p>SIFEX Air Cargo &bull; This is an automated message, please do not reply.</p>
+    </div>
+  </div>
+</body>
+</html>`;
 
 export async function sendInvitationEmail(params: {
   to: string;
@@ -20,33 +37,22 @@ export async function sendInvitationEmail(params: {
 }) {
   const { to, name, temporaryPassword, invitationUrl } = params;
 
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2>Welcome to Sifex Air Cargo ERP</h2>
-      <p>Hello ${name},</p>
-      <p>Your account has been created. Please use the following credentials to log in:</p>
-      <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
-        <p><strong>Email:</strong> ${to}</p>
-        <p><strong>Temporary Password:</strong> <code>${temporaryPassword}</code></p>
-      </div>
-      <p>You will be required to change your password after your first login.</p>
-      <a href="${invitationUrl}"
-         style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px;
-                border-radius: 6px; text-decoration: none; margin: 16px 0;">
-        Accept Invitation
-      </a>
-      <p style="color: #666; font-size: 12px; margin-top: 24px;">
-        This invitation will expire in 48 hours.
-      </p>
+  const html = baseHtml(`
+    <h2 style="margin:0 0 8px;font-size:18px;color:#111">Welcome to SIFEX</h2>
+    <p style="margin:0 0 4px;color:#555;font-size:14px">Hello ${name},</p>
+    <p style="margin:12px 0;color:#555;font-size:14px">Your account has been created. Use the credentials below to log in:</p>
+    <div class="box">
+      <p><strong>Email:</strong> ${to}</p>
+      <p><strong>Temporary Password:</strong> <code>${temporaryPassword}</code></p>
     </div>
-  `;
+    <p style="color:#555;font-size:14px">You will be required to change your password after first login.</p>
+    <div style="text-align:center;margin:24px 0">
+      <a href="${invitationUrl}" class="btn">Accept Invitation</a>
+    </div>
+    <p style="color:#888;font-size:12px">This invitation expires in 48 hours.</p>
+  `);
 
-  await transporter.sendMail({
-    from: FROM,
-    to,
-    subject: "Welcome to Sifex — Your Account Credentials",
-    html,
-  });
+  return sendEmail({ to, subject: "Welcome to SIFEX — Your Account Credentials", html });
 }
 
 export async function sendPasswordResetEmail(params: {
@@ -56,26 +62,15 @@ export async function sendPasswordResetEmail(params: {
 }) {
   const { to, name, resetUrl } = params;
 
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2>Reset Your Password</h2>
-      <p>Hello ${name},</p>
-      <p>Click the link below to reset your password:</p>
-      <a href="${resetUrl}"
-         style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px;
-                border-radius: 6px; text-decoration: none; margin: 16px 0;">
-        Reset Password
-      </a>
-      <p style="color: #666; font-size: 12px; margin-top: 24px;">
-        This link will expire in 1 hour.
-      </p>
+  const html = baseHtml(`
+    <h2 style="margin:0 0 8px;font-size:18px;color:#111">Reset Your Password</h2>
+    <p style="margin:0 0 4px;color:#555;font-size:14px">Hello ${name},</p>
+    <p style="margin:12px 0;color:#555;font-size:14px">Click the button below to reset your password:</p>
+    <div style="text-align:center;margin:24px 0">
+      <a href="${resetUrl}" class="btn">Reset Password</a>
     </div>
-  `;
+    <p style="color:#888;font-size:12px">This link expires in 1 hour. If you did not request this, please ignore this email.</p>
+  `);
 
-  await transporter.sendMail({
-    from: FROM,
-    to,
-    subject: "Reset Your Sifex Password",
-    html,
-  });
+  return sendEmail({ to, subject: "Reset Your SIFEX Password", html });
 }

@@ -1,26 +1,21 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import {
-  Settings, Save, RefreshCw, Plus, Pencil, Trash2, DollarSign, Plane, X, CheckCircle2, AlertCircle,
+  Settings, Save, RefreshCw, Plus, Pencil, Trash2, DollarSign, Plane, X, CheckCircle2, AlertCircle, Lock,
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+const SETTINGS_PERMISSION = 'settings.update';
+
 interface Station {
   id: string;
   code: string;
   name: string;
-}
-
-interface ExchangeRate {
-  id: string;
-  baseCurrency: string;
-  rates: Record<string, number>;
-  source: string;
-  validAt: string;
 }
 
 interface FreightRate {
@@ -39,6 +34,13 @@ const emptyFreightRate = (): FreightRate => ({
 });
 
 export default function SettingsPage() {
+  const { data: session } = useSession();
+  const canUpdate = !!(
+    session?.user?.roles?.includes('SUPER_ADMIN') ||
+    session?.user?.roles?.includes('ADMIN') ||
+    session?.user?.permissions?.includes(SETTINGS_PERMISSION)
+  );
+
   const [stations, setStations] = useState<Station[]>([]);
   const [awbTypes, setAwbTypes] = useState<{ code: string; name: string; label: string }[]>([]);
   const [currencies, setCurrencies] = useState<{ code: string; name: string; symbol: string }[]>([]);
@@ -50,6 +52,8 @@ export default function SettingsPage() {
     trackingPrefix: '',
     autoGenerateTracking: true,
   });
+  const [settingsSaved, setSettingsSaved] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   const [exCurrency, setExCurrency] = useState('TZS');
   const [exRate, setExRate] = useState(0);
@@ -133,6 +137,26 @@ export default function SettingsPage() {
 
   useEffect(() => { loadSettings(); loadStations(); loadFreightRates(); loadExchangeRates(); loadAWBTypes(); loadCurrencies(); }, [loadSettings, loadStations, loadFreightRates, loadExchangeRates, loadAWBTypes, loadCurrencies]);
 
+  const handleSaveSettings = async () => {
+    setSettingsSaving(true);
+    setSettingsSaved(false);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      if (res.ok) {
+        setSettingsSaved(true);
+        setTimeout(() => setSettingsSaved(false), 3000);
+      } else {
+        const err = await res.json();
+        console.error('Settings save error:', err);
+      }
+    } catch {}
+    setSettingsSaving(false);
+  };
+
   const handleSaveExchangeRates = async () => {
     setExSaved(false);
     try {
@@ -214,19 +238,32 @@ export default function SettingsPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Company Settings */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-          <h3 className="mb-4 text-sm font-semibold text-gray-900 dark:text-white">Company Information</h3>
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Company Information</h3>
+            {canUpdate ? (
+              <div className="flex items-center gap-2">
+                {settingsSaved && <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle2 className="h-3 w-3" /> Saved</span>}
+                <Button size="sm" onClick={handleSaveSettings} disabled={settingsSaving}>
+                  <Save className="mr-1 h-3 w-3" />
+                  {settingsSaving ? 'Saving...' : 'Save'}
+                </Button>
+              </div>
+            ) : (
+              <span className="flex items-center gap-1 text-xs text-gray-400"><Lock className="h-3 w-3" /> Read only</span>
+            )}
+          </div>
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-gray-700 dark:text-gray-300">Company Name</Label>
-              <Input value={settings.companyName} onChange={(e) => setSettings({ ...settings, companyName: e.target.value })} />
+              <Input value={settings.companyName} onChange={(e) => setSettings({ ...settings, companyName: e.target.value })} disabled={!canUpdate} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-gray-700 dark:text-gray-300">Company Code</Label>
-              <Input value={settings.companyCode} onChange={(e) => setSettings({ ...settings, companyCode: e.target.value })} />
+              <Input value={settings.companyCode} onChange={(e) => setSettings({ ...settings, companyCode: e.target.value })} disabled={!canUpdate} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-gray-700 dark:text-gray-300">Tracking Prefix</Label>
-              <Input value={settings.trackingPrefix} onChange={(e) => setSettings({ ...settings, trackingPrefix: e.target.value })} />
+              <Input value={settings.trackingPrefix} onChange={(e) => setSettings({ ...settings, trackingPrefix: e.target.value })} disabled={!canUpdate} />
               <p className="text-xs text-gray-400">Used for auto-generated tracking numbers (e.g., SFX-MAWB-DAR-20260526-0001)</p>
             </div>
           </div>
@@ -234,14 +271,20 @@ export default function SettingsPage() {
 
         {/* Operational Defaults */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-          <h3 className="mb-4 text-sm font-semibold text-gray-900 dark:text-white">Operational Defaults</h3>
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Operational Defaults</h3>
+            {!canUpdate && (
+              <span className="flex items-center gap-1 text-xs text-gray-400"><Lock className="h-3 w-3" /> Read only</span>
+            )}
+          </div>
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-gray-700 dark:text-gray-300">Default Currency</Label>
               <select
                 value={settings.defaultCurrency}
                 onChange={(e) => setSettings({ ...settings, defaultCurrency: e.target.value })}
-                className="flex h-9 w-full rounded-lg border border-gray-200 bg-white px-3 py-1 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                disabled={!canUpdate}
+                className="flex h-9 w-full rounded-lg border border-gray-200 bg-white px-3 py-1 text-sm disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-700 dark:bg-gray-900 dark:text-white"
               >
                 {currencies.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
               </select>
@@ -252,6 +295,7 @@ export default function SettingsPage() {
                 type="number"
                 value={settings.defaultChargeableDivisor}
                 onChange={(e) => setSettings({ ...settings, defaultChargeableDivisor: e.target.value })}
+                disabled={!canUpdate}
               />
               <p className="text-xs text-gray-400">Standard IATA divisor for volumetric weight calculation (default: 6000)</p>
             </div>
@@ -261,7 +305,8 @@ export default function SettingsPage() {
                 id="autoTracking"
                 checked={settings.autoGenerateTracking}
                 onChange={(e) => setSettings({ ...settings, autoGenerateTracking: e.target.checked })}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                disabled={!canUpdate}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 disabled:opacity-50"
               />
               <Label htmlFor="autoTracking" className="text-xs font-medium">
                 Auto-generate tracking numbers on cargo acceptance

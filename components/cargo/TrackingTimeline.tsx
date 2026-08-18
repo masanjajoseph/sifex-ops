@@ -103,12 +103,13 @@ function formatTimestamp(date: string | Date) {
 }
 
 export function TrackingTimeline({ events, className }: TrackingTimelineProps) {
+  const safeEvents = events || [];
   const sorted = useMemo(
-    () => [...events].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [events]
+    () => [...safeEvents].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [safeEvents]
   );
 
-  if (events.length === 0) {
+  if (safeEvents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-gray-200 p-8 text-center dark:border-gray-700">
         <Clock className="mb-2 h-8 w-8 text-gray-300 dark:text-gray-600" />

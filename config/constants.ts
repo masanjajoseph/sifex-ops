@@ -76,7 +76,7 @@ export enum UserStatus {
 }
 
 // Constants
-export const APP_NAME = "Sifex ERP";
+export const APP_NAME = "Sifex Air Cargo";
 export const APP_VERSION = "1.0.0";
 export const DEFAULT_PAGE_SIZE = 20;
 export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB

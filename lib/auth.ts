@@ -1,8 +1,6 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import { getToken } from "next-auth/jwt";
-import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { compare } from "bcryptjs";
 import { z } from "zod";
@@ -12,12 +10,17 @@ const loginSchema = z.object({
   password: z.string().min(6),
 });
 
-const { handlers: nextHandlers, signIn, signOut } = NextAuth({
+const {
+  handlers: nextHandlers,
+  signIn,
+  signOut,
+  auth,
+} = NextAuth({
   secret: process.env.AUTH_SECRET,
   adapter: PrismaAdapter(prisma),
   session: {
     strategy: "jwt",
-    maxAge: 8 * 60 * 60, // 8 hours
+    maxAge: 8 * 60 * 60,
   },
   pages: {
     signIn: "/login",
@@ -31,136 +34,166 @@ const { handlers: nextHandlers, signIn, signOut } = NextAuth({
       },
       async authorize(credentials) {
         const validated = loginSchema.safeParse(credentials);
-        if (!validated.success) return null;
+        if (!validated.success) {
+          console.log("[auth] authorize: invalid credentials schema");
+          return null;
+        }
 
         const { email, password } = validated.data;
 
         const user = await prisma.user.findUnique({
           where: { email },
-          include: {
+          select: {
+            id: true,
+            password: true,
+            status: true,
+            deletedAt: true,
+            branchId: true,
             userRoles: {
-              include: {
-                role: {
-                  include: {
-                    rolePermissions: {
-                      include: {
-                        permission: true,
-                      },
-                    },
-                  },
-                },
+              select: {
+                role: { select: { code: true } },
               },
-            },
-            department: true,
-            position: true,
-            branch: true,
-            userStations: {
-              include: {
-                station: true,
-              },
+              take: 1,
             },
           },
         });
 
-        if (!user || user.status === "DISABLED" || user.deletedAt) return null;
+        if (!user || user.status === "DISABLED" || user.deletedAt) {
+          console.log("[auth] authorize: user not found or disabled", email);
+          return null;
+        }
 
         const isValid = await compare(password, user.password);
-        if (!isValid) return null;
+        if (!isValid) {
+          console.log("[auth] authorize: invalid password", email);
+          return null;
+        }
 
         await prisma.user.update({
           where: { id: user.id },
           data: { lastLoginAt: new Date() },
         });
 
-        const roles = user.userRoles.map((ur) => ur.role.code);
-        const permissions = user.userRoles.flatMap((ur) =>
-          ur.role.rolePermissions.map((rp) => rp.permission.code)
-        );
-        const stations = user.userStations.map((us) => us.station.id);
+        console.log("[auth] authorize: success", user.id);
 
         return {
           id: user.id,
-          email: user.email,
-          name: `${user.firstName} ${user.lastName}`,
-          roles,
-          permissions,
+          email,
+          role: user.userRoles[0]?.role.code ?? null,
           branchId: user.branchId,
-          departmentId: user.departmentId,
-          stations,
-          passwordResetRequired: user.passwordResetRequired,
-          status: user.status,
         };
       },
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
+      console.log("[auth] jwt callback start", { hasUser: !!user, trigger });
+
       if (user) {
-        token.id = user.id;
-        token.roles = user.roles;
-        token.permissions = user.permissions;
-        token.branchId = user.branchId;
-        token.departmentId = user.departmentId;
-        token.stations = user.stations;
-        token.passwordResetRequired = user.passwordResetRequired;
-        token.status = user.status;
+        token.email = user.email;
+        token.roleId = user.role;
+        token.workspaceId = user.branchId;
+        token.sessionId = crypto.randomUUID();
       }
+
+      if (trigger === "update") {
+        const fresh = await prisma.user.findUnique({
+          where: { id: token.sub as string },
+          select: { email: true },
+        });
+        if (fresh) token.email = fresh.email;
+      }
+
+      console.log("[auth] jwt callback end");
       return token;
     },
     async session({ session, token }) {
+      console.log("[auth] session callback start", { uid: token.sub });
+
       if (token) {
-        session.user.id = token.id as string;
-        session.user.roles = token.roles as string[];
-        session.user.permissions = token.permissions as string[];
-        session.user.branchId = token.branchId as string | null;
-        session.user.departmentId = token.departmentId as string | null;
-        session.user.stations = token.stations as string[];
-        session.user.passwordResetRequired = token.passwordResetRequired as boolean;
-        session.user.status = token.status as string;
+        session.user.id = token.sub as string;
+        session.user.email = (token.email as string) ?? "";
+        session.user.role = (token.roleId as string) ?? null;
+
+        // Load display name + avatar from DB (single query, no relationships)
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: token.sub as string },
+            select: {
+              firstName: true,
+              lastName: true,
+              avatar: true,
+            },
+          });
+          if (dbUser) {
+            session.user.name = `${dbUser.firstName} ${dbUser.lastName}`;
+            session.user.image = dbUser.avatar;
+          } else {
+            session.user.name = "";
+            session.user.image = null;
+          }
+        } catch (err) {
+          console.log("[auth] session: DB query failed", err);
+          session.user.name = "";
+          session.user.image = null;
+        }
+
+        try {
+          const dbUserFull = await prisma.user.findUnique({
+            where: { id: token.sub as string },
+            select: {
+              branchId: true,
+              departmentId: true,
+              status: true,
+              passwordResetRequired: true,
+              position: { select: { name: true } },
+              userRoles: {
+                select: {
+                  role: {
+                    select: {
+                      code: true,
+                      rolePermissions: { select: { permission: { select: { code: true } } } },
+                    },
+                  },
+                },
+              },
+              userStations: { select: { stationId: true } },
+            },
+          });
+          if (dbUserFull) {
+            session.user.roles = dbUserFull.userRoles.map(ur => ur.role.code);
+            const permSet = new Set<string>();
+            for (const ur of dbUserFull.userRoles) {
+              for (const rp of ur.role.rolePermissions) {
+                permSet.add(rp.permission.code);
+              }
+            }
+            session.user.permissions = Array.from(permSet);
+            session.user.stations = dbUserFull.userStations.map(us => us.stationId);
+            session.user.branchId = dbUserFull.branchId;
+            session.user.departmentId = dbUserFull.departmentId;
+            session.user.status = dbUserFull.status;
+            session.user.passwordResetRequired = dbUserFull.passwordResetRequired;
+            session.user.positionName = dbUserFull.position?.name ?? null;
+          }
+        } catch (err) {
+          console.log("[auth] session: permission query failed", err);
+          session.user.roles = [];
+          session.user.permissions = [];
+          session.user.stations = [];
+          session.user.branchId = null;
+          session.user.departmentId = null;
+          session.user.status = "ACTIVE";
+          session.user.passwordResetRequired = false;
+          session.user.positionName = null;
+        }
       }
+
+      console.log("[auth] session callback end");
       return session;
     },
   },
 });
 
 export const handlers = nextHandlers;
-
-export { signIn, signOut };
-
-export async function auth() {
-  try {
-    const cookieStore = await cookies();
-    const allCookies = cookieStore.getAll();
-    const cookieString = allCookies
-      .map((c) => `${c.name}=${c.value}`)
-      .join("; ");
-    const reqHeaders = new Headers({ cookie: cookieString });
-
-    const token = await getToken({
-      req: { headers: reqHeaders } as any,
-      secret: process.env.AUTH_SECRET,
-    });
-
-    if (!token) return null;
-
-    return {
-      user: {
-        id: (token.id as string) ?? (token.sub as string),
-        name: token.name as string,
-        email: token.email as string,
-        roles: token.roles as string[],
-        permissions: token.permissions as string[],
-        branchId: token.branchId as string | null,
-        departmentId: token.departmentId as string | null,
-        stations: token.stations as string[],
-        passwordResetRequired: token.passwordResetRequired as boolean,
-        status: token.status as string,
-      },
-      expires: new Date(
-        Date.now() + 8 * 60 * 60 * 1000
-      ).toISOString(),
-    };
-  } catch {
-    return null;
-  }
-}
+export { signIn, signOut, auth };

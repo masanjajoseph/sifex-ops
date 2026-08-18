@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { DatePicker } from '@/components/ui/date-picker';
+import { WorkflowProgress } from '@/components/cargo/WorkflowProgress';
 import { cn } from '@/lib/utils';
 
 interface ShipmentDetail {
@@ -31,6 +32,8 @@ interface ShipmentDetail {
   volume: number;
   chargeableWeight: number;
   cargoStatus: string;
+  workflowStatus?: string;
+  workflowStage?: string;
   warehouseStatus: string;
   billingStatus: string;
   shipmentType: string;
@@ -75,27 +78,9 @@ const statusVariant = (s: string) => {
   }
 };
 
-const validTransitions: Record<string, string[]> = {
-  INITIATED: ['ACCEPTED', 'CANCELLED'],
-  ACCEPTED: ['RCS', 'CANCELLED'],
-  RCS: ['MANIFESTED', 'CANCELLED'],
-  MANIFESTED: ['LOADED', 'CANCELLED'],
-  LOADED: ['DEPARTED'],
-  DEPARTED: ['IN_TRANSIT'],
-  IN_TRANSIT: ['ARRIVED', 'CUSTOMS_HOLD'],
-  ARRIVED: ['UNDER_CLEARANCE', 'RELEASED'],
-  UNDER_CLEARANCE: ['CUSTOMS_HOLD', 'RELEASED'],
-  CUSTOMS_HOLD: ['UNDER_CLEARANCE', 'CANCELLED'],
-  RELEASED: ['AWAITING_DELIVERY'],
-  AWAITING_DELIVERY: ['OUT_FOR_DELIVERY', 'PICKED_UP'],
-  OUT_FOR_DELIVERY: ['DELIVERED'],
-  PICKED_UP: ['POD_SIGNED'],
-  DELIVERED: ['POD_SIGNED'],
-  CANCELLED: [],
-  POD_SIGNED: [],
-};
 
-export default function ExportDetailPage() {
+
+export default function MasterAWBDtailPage() {
   const params = useParams();
   const router = useRouter();
   const [shipment, setShipment] = useState<ShipmentDetail | null>(null);
@@ -131,17 +116,35 @@ export default function ExportDetailPage() {
 
   useEffect(() => { fetchDetail(); }, [params.id]);
 
-  const handleTransition = async (newStatus: string) => {
+  const [workflowActions, setWorkflowActions] = useState<string[]>([]);
+
+  const fetchWorkflowActions = async () => {
+    try {
+      const res = await fetch(`/api/workflow?entityType=MasterAWB&entityId=${params.id}`);
+      if (res.ok) {
+        const json = await res.json();
+        setWorkflowActions(json.actions || []);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (shipment && !shipment.workflowStage || shipment?.workflowStage === 'EXPORT') {
+      fetchWorkflowActions();
+    }
+  }, [shipment?.id, shipment?.workflowStage]);
+
+  const handleAction = async (action: string) => {
     if (!shipment) return;
     setIsTransitioning(true);
     try {
-      const res = await fetch(`/api/master-awbs/${shipment.id}`, {
-        method: 'PATCH',
+      const res = await fetch('/api/workflow', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cargoStatus: newStatus }),
+        body: JSON.stringify({ entityType: 'MasterAWB', entityId: shipment.id, action }),
       });
-      const json = await res.json();
-      if (json.success) {
+      if (res.ok) {
+        setWorkflowActions([]);
         await fetchDetail();
       }
     } finally {
@@ -180,8 +183,7 @@ export default function ExportDetailPage() {
     );
   }
 
-  const nextTransitions = validTransitions[shipment.cargoStatus] || [];
-  const isTerminal = ['CANCELLED', 'DELIVERED', 'POD_SIGNED'].includes(shipment.cargoStatus);
+  const isExportScope = !shipment.workflowStage || shipment.workflowStage === 'EXPORT';
 
   return (
     <div className="space-y-6">
@@ -190,7 +192,7 @@ export default function ExportDetailPage() {
         description={`Tracking: ${shipment.trackingNumber}`}
         breadcrumbs={[
           { label: 'Workspace', href: '/workspace' },
-          { label: 'Export Operations', href: '/workspace/export' },
+          { label: 'Master AWB', href: '/workspace/master-awb' },
           { label: shipment.awbNumber },
         ]}
         action={
@@ -198,12 +200,33 @@ export default function ExportDetailPage() {
             <Button variant="outline" size="sm" onClick={fetchDetail}>
               <RefreshCw className="mr-1 h-4 w-4" /> Refresh
             </Button>
-            <Button variant="outline" size="sm" onClick={() => router.push('/workspace/export')}>
+            <Button variant="outline" size="sm" onClick={() => router.push('/workspace/master-awb')}>
               <ArrowLeft className="mr-1 h-4 w-4" /> Back to List
             </Button>
           </div>
         }
       />
+
+      {!isExportScope && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950">
+          <div className="flex items-center gap-3">
+            <Plane className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <p className="text-sm text-blue-800 dark:text-blue-200">
+              This shipment has moved to{' '}
+              <button type="button" onClick={() => {
+                const stages: Record<string, string> = { IMPORT: '/workspace/import', WAREHOUSE: '/workspace/warehouse', DELIVERY: '/workspace/delivery' };
+                router.push(stages[shipment.workflowStage || ''] || '/workspace/import');
+              }} className="font-medium underline hover:text-blue-600">
+                {shipment.workflowStage === 'WAREHOUSE' ? 'Warehouse Operations' :
+                 shipment.workflowStage === 'DELIVERY' ? 'Delivery Operations' :
+                 shipment.workflowStage === 'COMPLETED' ? 'Completed Operations' :
+                 'Import Operations'}
+              </button>
+              . Export actions are no longer available.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
@@ -251,7 +274,7 @@ export default function ExportDetailPage() {
               </div>
               <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Flight</p>
-                <p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">{shipment.flightNumber || '—'}</p>
+                <p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">{shipment.flightNumber || '\u2014'}</p>
               </div>
             </div>
           </div>
@@ -328,29 +351,29 @@ export default function ExportDetailPage() {
             </div>
           </div>
 
-          {!isTerminal && nextTransitions.length > 0 && (
+          {isExportScope && workflowActions.length > 0 && (
             <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <h3 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">Status Transition</h3>
+              <h3 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">Workflow Actions</h3>
               <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-                Current: <span className="font-medium text-gray-700 dark:text-gray-300">{shipment.cargoStatus.replace(/_/g, ' ')}</span>
+                Current: <span className="font-medium text-gray-700 dark:text-gray-300">{shipment.workflowStatus || shipment.cargoStatus?.replace(/_/g, ' ')}</span>
               </p>
               <div className="flex flex-wrap gap-2">
-                {nextTransitions.map((status) => (
+                {workflowActions.map((action) => (
                   <Button
-                    key={status}
+                    key={action}
                     size="sm"
-                    variant={status === 'CANCELLED' ? 'destructive' : 'default'}
-                    onClick={() => handleTransition(status)}
+                    variant={action === 'CANCELLED' || action === 'CANCEL_SHIPMENT' ? 'destructive' : 'default'}
+                    onClick={() => handleAction(action)}
                     disabled={isTransitioning}
                   >
                     {isTransitioning ? (
                       <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                    ) : status === 'CANCELLED' ? (
+                    ) : action === 'CANCELLED' || action === 'CANCEL_SHIPMENT' ? (
                       <XCircle className="mr-1 h-3 w-3" />
                     ) : (
                       <CheckCircle2 className="mr-1 h-3 w-3" />
                     )}
-                    {status.replace(/_/g, ' ')}
+                    {action.replace(/_/g, ' ')}
                   </Button>
                 ))}
               </div>
@@ -366,12 +389,12 @@ export default function ExportDetailPage() {
               </div>
               <div className="divide-y divide-gray-100 dark:divide-gray-800">
                 {shipment.houseAWBs.map((ha) => (
-                  <HawbRow key={ha.id} hawb={ha} onRefresh={fetchDetail} />
+                  <HawbRow key={ha.id} hawb={ha} onRefresh={fetchDetail} canTransfer={isExportScope} />
                 ))}
               </div>
             </div>
           )}
-          <AddHouseAWBForm masterAWBId={shipment.id} onCreated={fetchDetail} />
+          {isExportScope && <AddHouseAWBForm masterAWBId={shipment.id} onCreated={fetchDetail} />}
         </div>
 
         <div className="space-y-6">
@@ -400,6 +423,8 @@ export default function ExportDetailPage() {
               )}
             </div>
           </div>
+
+          <WorkflowProgress entityType="MasterAWB" entityId={shipment.id} currentStatus={shipment.workflowStatus} currentStage={shipment.workflowStage} />
 
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
             <h3 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">Status History</h3>
@@ -440,7 +465,7 @@ export default function ExportDetailPage() {
   );
 }
 
-function HawbRow({ hawb, onRefresh }: { hawb: ShipmentDetail['houseAWBs'][0]; onRefresh: () => void }) {
+function HawbRow({ hawb, onRefresh, canTransfer }: { hawb: ShipmentDetail['houseAWBs'][0]; onRefresh: () => void; canTransfer?: boolean }) {
   const router = useRouter();
   const [moving, setMoving] = useState(false);
   const [moveError, setMoveError] = useState('');
@@ -477,7 +502,7 @@ function HawbRow({ hawb, onRefresh }: { hawb: ShipmentDetail['houseAWBs'][0]; on
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {moveError && <span className="text-xs text-red-500">{moveError}</span>}
-        {!isHkg && (
+        {canTransfer && !isHkg && (
           <Button variant="ghost" size="sm" className="h-7 text-xs text-amber-600" onClick={handleMoveToHKG} disabled={moving}>
             {moving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plane className="h-3 w-3" />}
             HKG
@@ -847,7 +872,7 @@ function AddHouseAWBForm({ masterAWBId, onCreated }: { masterAWBId: string; onCr
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Rate (per kg)</label>
                   <div className="flex h-8 items-center rounded-lg border border-blue-200 bg-white px-3 text-sm font-medium text-blue-700 dark:border-blue-800 dark:bg-gray-900 dark:text-blue-400">
-                    {f.freightRate ? `${f.freightRate.toFixed(2)} ${f.currency}` : '—'}
+                    {f.freightRate ? `${f.freightRate.toFixed(2)} ${f.currency}` : '\u2014'}
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -864,7 +889,7 @@ function AddHouseAWBForm({ masterAWBId, onCreated }: { masterAWBId: string; onCr
                 </div>
               </div>
               <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
-                {f.freightRate} × {f.chargeableWeight} = ${f.freightAmount.toFixed(2)}
+                {f.freightRate} \u00d7 {f.chargeableWeight} = ${f.freightAmount.toFixed(2)}
               </p>
             </div>
           </div>

@@ -1,39 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
-import { env } from "@/lib/env";
 
 export async function proxy(req: NextRequest) {
-  const start = Date.now();
   const { pathname } = req.nextUrl;
 
-  const isRootPath = pathname === "/";
-  const isLoginPath = pathname.startsWith("/login");
-  const isWorkspaceRoute = pathname.startsWith("/workspace");
-  const isApiRoute = pathname.startsWith("/api");
-  const isStaticFile =
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon.ico") ||
-    pathname.startsWith("/public") ||
-    pathname === "/logo.png";
-
-  if (isStaticFile) {
-    return NextResponse.next();
-  }
-
-  if (isApiRoute && env.PROMETHEUS_ENABLED) {
-    const { apiRequestsTotal, httpRequestDuration } = await import("@/lib/monitoring/metrics");
-    const response = NextResponse.next();
-    const duration = (Date.now() - start) / 1000;
-    const url = new URL(req.url);
-    const route = url.pathname.replace(/\/[^/]+$/, "/:id");
-    apiRequestsTotal.inc({ method: req.method, route, status: response.status });
-    httpRequestDuration.observe({ method: req.method, route, status: response.status }, duration);
-    return response;
-  }
-
-  if (isApiRoute) {
-    return NextResponse.next();
-  }
+  console.log("[auth:middleware] start", { pathname });
 
   const token = await getToken({
     req,
@@ -41,29 +12,33 @@ export async function proxy(req: NextRequest) {
   });
 
   const isLoggedIn = !!token;
+  console.log("[auth:middleware] token present:", isLoggedIn);
 
-  if (isRootPath) {
-    if (isLoggedIn) {
-      return NextResponse.redirect(new URL("/workspace", req.url));
-    }
-    return NextResponse.redirect(new URL("/login", req.url));
+  // Root path: redirect based on auth state
+  if (pathname === "/") {
+    const dest = isLoggedIn ? "/workspace" : "/login";
+    console.log("[auth:middleware] redirect / ->", dest);
+    return NextResponse.redirect(new URL(dest, req.url));
   }
 
-  if (isWorkspaceRoute && !isLoggedIn) {
+  // Workspace routes: require auth
+  if (pathname.startsWith("/workspace") && !isLoggedIn) {
+    console.log("[auth:middleware] workspace without auth, redirecting to login");
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  if (isLoginPath && isLoggedIn) {
+  // Login routes: redirect to workspace if already logged in
+  if (pathname.startsWith("/login") && isLoggedIn) {
+    console.log("[auth:middleware] already logged in, redirecting to workspace");
     return NextResponse.redirect(new URL("/workspace", req.url));
   }
 
+  console.log("[auth:middleware] pass through");
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|public|logo.png).*)",
-  ],
+  matcher: ["/", "/workspace/:path*", "/login/:path*"],
 };

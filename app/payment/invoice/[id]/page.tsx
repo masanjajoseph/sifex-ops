@@ -33,10 +33,10 @@ const LIPA_NETWORKS = [
 ];
 
 const BANKS = [
-  { value: "CRDB", label: "CRDB Bank", account: "0151234567890", name: "SIFEX COURIER SERVICES COMPANY LTD" },
-  { value: "NMB", label: "NMB Bank", account: "41234567890", name: "SIFEX COURIER SERVICES COMPANY LTD" },
-  { value: "NBC", label: "NBC Bank", account: "011234567890", name: "SIFEX COURIER SERVICES COMPANY LTD" },
-  { value: "EQUITY", label: "Equity Bank", account: "3101234567890", name: "SIFEX COURIER SERVICES COMPANY LTD" },
+  { value: "CRDB", label: "CRDB Bank", account: "0151234567890", name: "Sifex Air Cargo COMPANY LTD" },
+  { value: "NMB", label: "NMB Bank", account: "41234567890", name: "Sifex Air Cargo COMPANY LTD" },
+  { value: "NBC", label: "NBC Bank", account: "011234567890", name: "Sifex Air Cargo COMPANY LTD" },
+  { value: "EQUITY", label: "Equity Bank", account: "3101234567890", name: "Sifex Air Cargo COMPANY LTD" },
 ];
 
 export default function PaymentInvoicePage() {
@@ -172,7 +172,7 @@ export default function PaymentInvoicePage() {
     <div className="min-h-screen bg-gray-50 py-12 dark:bg-gray-950">
       <div className="mx-auto max-w-lg px-4">
         <div className="mb-8 text-center">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">SIFEX Logistics</h1>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Sifex Air Cargo</h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Invoice Payment</p>
         </div>
 

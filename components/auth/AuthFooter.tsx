@@ -19,7 +19,7 @@ export function AuthFooter() {
           </span>
           <span>v{VERSION}</span>
         </div>
-        <span>&copy; {new Date().getFullYear()} Sifex ERP</span>
+        <span>&copy; {new Date().getFullYear()} Sifex Air Cargo</span>
       </div>
       <p className="text-[11px] text-muted-foreground/40 text-center">
         Enterprise air cargo operations platform. Support: ops@sifex.io

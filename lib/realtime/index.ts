@@ -3,7 +3,10 @@ import { env } from "@/lib/env";
 
 let realtime: Ably.Realtime | null = null;
 
-export function getRealtime(): Ably.Realtime {
+const isAblyConfigured = !!env.ABLY_API_KEY;
+
+export function getRealtime(): Ably.Realtime | null {
+  if (!isAblyConfigured) return null;
   if (!realtime) {
     realtime = new Ably.Realtime({ key: env.ABLY_API_KEY });
   }
@@ -12,11 +15,13 @@ export function getRealtime(): Ably.Realtime {
 
 export async function publish(channel: string, event: string, data: unknown): Promise<void> {
   const client = getRealtime();
+  if (!client) return;
   const ch = client.channels.get(channel);
   await ch.publish(event, data);
 }
 
-export function getChannel(channelName: string): Ably.RealtimeChannel {
+export function getChannel(channelName: string): Ably.RealtimeChannel | null {
   const client = getRealtime();
+  if (!client) return null;
   return client.channels.get(channelName);
 }

@@ -2,55 +2,35 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Warehouse, Search, RefreshCw, Package, Truck, Pen, CheckCircle } from 'lucide-react';
+import {
+  Warehouse, Search, RefreshCw, Package, Truck, CheckCircle,
+  Layers, Grid3X3, Printer, DollarSign, User, Loader2
+} from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { DataTable } from '@/components/ui/DataTable';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { StatCard } from '@/components/ui/StatCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 
-interface MawbItem {
-  id: string;
-  awbNumber: string;
-  trackingNumber: string;
-  awbPieces: number;
-  awbWeight: number;
-  chargeableWeight: number;
-  cargoStatus: string;
-  createdAt: string;
-  originStation?: { code: string };
-  destinationStation?: { code: string };
-  houseAWBs?: Array<{ id: string; houseAWBNumber: string; cargoStatus: string }>;
+interface DashboardStats {
+  awaitingStorage: number;
+  stored: number;
+  waitingPayment: number;
+  storedToday: number;
+  invoiceGenerated: number;
+  totalInventory: number;
 }
-
-interface HawbReadyItem {
-  id: string;
-  houseAWBNumber: string;
-  trackingNumber: string;
-  pieces: number;
-  weight: number;
-  cargoStatus: string;
-  billingStatus: string;
-  paymentMethod: string | null;
-  masterAWB?: { awbNumber: string };
-}
-
-const billingVariant = (s: string) => {
-  const st = s.toUpperCase();
-  if (st === 'PAID') return 'success';
-  if (st === 'CREDITED') return 'info';
-  if (st === 'UNPAID' || st === 'NOT_BILLED' || st === 'DRAFT' || st === 'INVOICED') return 'pending';
-  return 'pending';
-};
 
 const statusVariant = (s: string) => {
   switch (s) {
-    case 'DISPATCHED': case 'RELEASED': case 'AWAITING_DELIVERY': return 'success';
-    case 'RACKED': case 'STORED': case 'OUT_FOR_DELIVERY': return 'info';
-    case 'RECEIVED': case 'PICKED_UP': return 'pending';
+    case 'COMPLETED': case 'DELIVERED': case 'POD_SIGNED': case 'RELEASED': return 'success';
+    case 'WAREHOUSE_RECEIVING': case 'AWAITING_STORAGE': case 'STORED': return 'info';
+    case 'INVOICE_GENERATED': case 'WAITING_PAYMENT': return 'warning';
     case 'HELD': case 'EXCEPTION': return 'error';
     default: return 'pending';
   }
@@ -58,67 +38,116 @@ const statusVariant = (s: string) => {
 
 export default function WarehousePage() {
   const router = useRouter();
-  const [releasedMawbs, setReleasedMawbs] = useState<MawbItem[]>([]);
-  const [readyHawbs, setReadyHawbs] = useState<HawbReadyItem[]>([]);
+  const isMobile = useMediaQuery('(max-width: 767px)');
+  const [shipments, setShipments] = useState<any[]>([]);
+  const [stats, setStats] = useState<DashboardStats>({
+    awaitingStorage: 0, stored: 0, waitingPayment: 0,
+    storedToday: 0, invoiceGenerated: 0, totalInventory: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [tab, setTab] = useState<'released' | 'ready'>('released');
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [tab, setTab] = useState<'awaiting' | 'stored' | 'billing'>('awaiting');
+  const [assignEntity, setAssignEntity] = useState<string | null>(null);
+  const [zones, setZones] = useState<any[]>([]);
+  const [locations, setLocations] = useState<any[]>([]);
+  const [selectedZone, setSelectedZone] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState('');
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [loadingLocations, setLoadingLocations] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const notDelivered = encodeURIComponent('DELIVERED,POD_SIGNED');
-      const [mawbRes, hawbRes] = await Promise.all([
-        fetch('/api/master-awbs?limit=50&scope=warehouse'),
-        fetch(`/api/house-awbs?limit=100&notStatus=${notDelivered}`),
+      const [shipRes, statsRes] = await Promise.all([
+        fetch('/api/master-awbs?limit=100&scope=warehouse'),
+        fetch('/api/dashboard/warehouse'),
       ]);
-      if (mawbRes.ok) { const j = await mawbRes.json(); setReleasedMawbs(j.data || []); }
-      if (hawbRes.ok) { const j = await hawbRes.json(); setReadyHawbs(j.data || []); }
-    } catch { } finally { setLoading(false); }
+      if (shipRes.ok) { const j = await shipRes.json(); setShipments(j.data || []); }
+      if (statsRes.ok) { const j = await statsRes.json(); if (j.success) setStats(j.data); }
+    } catch {} finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const filterBySearch = (items: any[], fields: string[]) =>
-    items.filter(i => !search || fields.some(f => String(i[f] || '').toLowerCase().includes(search.toLowerCase())));
+  const filterBySearch = useCallback((items: any[]) =>
+    items.filter(i => !search ||
+      String(i.awbNumber || '').toLowerCase().includes(search.toLowerCase()) ||
+      String(i.trackingNumber || '').toLowerCase().includes(search.toLowerCase())
+    ), [search]);
 
-  const filteredMawbs = useMemo(() => filterBySearch(releasedMawbs, ['awbNumber', 'trackingNumber']), [releasedMawbs, search]);
-  const filteredReady = useMemo(() => filterBySearch(readyHawbs, ['houseAWBNumber', 'trackingNumber', 'masterAWB.awbNumber']), [readyHawbs, search]);
+  const awaitingStorage = useMemo(() => filterBySearch(shipments.filter((s: any) => s.workflowStatus === 'WAREHOUSE_RECEIVING' || s.workflowStatus === 'AWAITING_STORAGE')), [shipments, filterBySearch]);
+  const stored = useMemo(() => filterBySearch(shipments.filter((s: any) => s.workflowStatus === 'STORED')), [shipments, filterBySearch]);
+  const billing = useMemo(() => filterBySearch(shipments.filter((s: any) => ['INVOICE_GENERATED', 'WAITING_PAYMENT'].includes(s.workflowStatus))), [shipments, filterBySearch]);
 
-  const handleMarkReady = async (hawbId: string) => {
-    setActionLoading(hawbId);
+  const handleAction = async (action: string, entityId: string) => {
     try {
-      const res = await fetch(`/api/house-awbs/${hawbId}/ready-for-delivery`, { method: 'POST' });
-      if (res.ok) { await fetchData(); }
-    } finally { setActionLoading(null); }
+      await fetch('/api/workflow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entityType: 'MasterAWB', entityId, action }),
+      });
+      fetchData();
+    } catch {}
   };
 
-  const handlePickup = (hawbId: string) => {
-    router.push(`/workspace/house-awb/${hawbId}?action=pickup`);
+  const openAssignShelf = async (entityId: string) => {
+    setAssignEntity(entityId);
+    setSelectedZone('');
+    setSelectedLocation('');
+    try {
+      const res = await fetch('/api/warehouse/zones');
+      if (res.ok) { const j = await res.json(); setZones(j.data || []); }
+    } catch {}
   };
 
-  const totalReady = readyHawbs.filter(h => h.cargoStatus === 'RELEASED' || h.cargoStatus === 'AWAITING_DELIVERY').length;
-  const totalOut = readyHawbs.filter(h => h.cargoStatus === 'OUT_FOR_DELIVERY').length;
-  const totalPicked = readyHawbs.filter(h => h.cargoStatus === 'PICKED_UP').length;
+  const onZoneChange = async (zoneId: string) => {
+    setSelectedZone(zoneId);
+    setSelectedLocation('');
+    if (!zoneId) { setLocations([]); return; }
+    setLoadingLocations(true);
+    try {
+      const res = await fetch(`/api/warehouse/locations?zoneId=${zoneId}`);
+      if (res.ok) { const j = await res.json(); setLocations(j.data || []); }
+    } catch {} finally { setLoadingLocations(false); }
+  };
+
+  const handleAssignShelf = async () => {
+    if (!assignEntity || !selectedLocation || assignSaving) return;
+    setAssignSaving(true);
+    try {
+      await fetch('/api/workflow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entityType: 'MasterAWB',
+          entityId: assignEntity,
+          action: 'ASSIGN_SHELF',
+          locationId: selectedLocation,
+        }),
+      });
+      setAssignEntity(null);
+      fetchData();
+    } catch {} finally { setAssignSaving(false); }
+  };
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Warehouse Operations" description="Manage warehouse inventory, dispatch, and delivery readiness"
+      <PageHeader title="Warehouse Operations" description="Manage warehouse inventory, storage, and dispatch"
         breadcrumbs={[{ label: 'Workspace', href: '/workspace' }, { label: 'Warehouse' }]}
         action={<Button variant="outline" size="sm" onClick={fetchData}><RefreshCw className="mr-1 h-4 w-4" /> Refresh</Button>} />
 
-      <div className="grid gap-4 sm:grid-cols-5">
-        <StatCard label="Released MAWBs" value={releasedMawbs.length} icon={<Warehouse className="h-5 w-5" />} />
-        <StatCard label="Awaiting Delivery" value={totalReady} icon={<Package className="h-5 w-5" />} />
-        <StatCard label="Out for Delivery" value={totalOut} icon={<Truck className="h-5 w-5" />} />
-        <StatCard label="Picked Up" value={totalPicked} icon={<CheckCircle className="h-5 w-5" />} />
+      <div className="grid gap-4 sm:grid-cols-4">
+        <StatCard label="Awaiting Storage" value={stats.awaitingStorage} icon={<Package className="h-5 w-5" />} />
+        <StatCard label="Stored" value={stats.stored} icon={<Layers className="h-5 w-5" />} />
+        <StatCard label="Waiting Payment" value={stats.waitingPayment} icon={<DollarSign className="h-5 w-5" />} />
+        <StatCard label="Stored Today" value={stats.storedToday} icon={<CheckCircle className="h-5 w-5" />} />
       </div>
 
       <div className="flex items-center gap-4">
         <div className="flex rounded-lg border border-gray-200 dark:border-gray-700">
-          <button onClick={() => setTab('released')} className={`px-4 py-2 text-sm font-medium rounded-l-lg ${tab === 'released' ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>Released MAWBs ({releasedMawbs.length})</button>
-          <button onClick={() => setTab('ready')} className={`px-4 py-2 text-sm font-medium rounded-r-lg ${tab === 'ready' ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>Ready for Delivery ({totalReady})</button>
+          <button onClick={() => setTab('awaiting')} className={`px-4 py-2 text-sm font-medium rounded-l-lg ${tab === 'awaiting' ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>Awaiting Storage ({stats.awaitingStorage})</button>
+          <button onClick={() => setTab('stored')} className={`px-4 py-2 text-sm font-medium ${tab === 'stored' ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>Stored ({stats.stored})</button>
+          <button onClick={() => setTab('billing')} className={`px-4 py-2 text-sm font-medium rounded-r-lg ${tab === 'billing' ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>Billing ({stats.waitingPayment})</button>
         </div>
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -128,44 +157,126 @@ export default function WarehousePage() {
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-      ) : tab === 'released' ? (
-        filteredMawbs.length === 0 ? <EmptyState icon={<Package className="h-12 w-12" />} title="No released MAWBs" description="Released MAWBs will appear here." />
-        : <DataTable columns={[
-          { header: 'AWB', accessorKey: 'awbNumber' as const },
-          { header: 'Tracking', accessorKey: 'trackingNumber' as const },
-          { header: 'Pieces', accessorKey: 'awbPieces' as const },
-          { header: 'Weight', accessorKey: 'chargeableWeight' as const, cell: (i: any) => `${i.getValue()} kg` },
-          { header: 'Origin', accessorKey: 'originStation' as const, cell: (i: any) => i.getValue()?.code || '-' },
-          { header: 'Dest', accessorKey: 'destinationStation' as const, cell: (i: any) => i.getValue()?.code || '-' },
-          { header: 'Status', accessorKey: 'cargoStatus' as const, cell: (i: any) => <StatusBadge status="success" label="RELEASED" /> },
-        ]} data={filteredMawbs} pageSize={15} />
-      ) : (
-        filteredReady.length === 0 ? <EmptyState icon={<Truck className="h-12 w-12" />} title="No HAWBs ready for delivery" description="Mark released HAWBs as ready for delivery from the MAWB detail page." />
+      ) : tab === 'awaiting' ? (
+        awaitingStorage.length === 0 ? <EmptyState icon={<Package className="h-12 w-12" />} title="No shipments awaiting storage" description="Import shipments will appear here when received into warehouse." />
         : <div className="divide-y divide-gray-100 dark:divide-gray-800 rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
-            {filteredReady.map(h => (
-              <div key={h.id} className="flex items-center justify-between px-5 py-3">
-                <div className="flex-1 min-w-0">
-                  <button onClick={() => router.push(`/workspace/house-awb/${h.id}`)} className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">{h.houseAWBNumber}</button>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{h.pieces} pcs · {h.weight} kg · {h.masterAWB?.awbNumber || '-'}</p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <StatusBadge status={billingVariant(h.billingStatus)} label={h.billingStatus.replace(/_/g, ' ')} />
-                  <StatusBadge status={h.cargoStatus === 'AWAITING_DELIVERY' ? 'pending' : h.cargoStatus === 'OUT_FOR_DELIVERY' ? 'info' : 'success'} label={h.cargoStatus.replace(/_/g, ' ')} />
-                  {h.cargoStatus === 'AWAITING_DELIVERY' && (
-                    <>
-                      <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => handlePickup(h.id)} disabled={actionLoading === h.id}>
-                        <Pen className="mr-1 h-3 w-3" /> Pickup Note
-                      </Button>
-                      <Button size="sm" className="h-8 text-xs" onClick={() => handleMarkReady(h.id)} disabled={actionLoading === h.id}>
-                        <Truck className="mr-1 h-3 w-3" /> Assign Rider
-                      </Button>
-                    </>
-                  )}
+            {awaitingStorage.map((s: any) => (
+              <div key={s.id}>
+                <div className="flex items-center justify-between px-5 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{s.awbNumber}</p>
+                    <p className="text-xs text-gray-500">{s.awbPieces} pcs · {s.awbWeight} kg</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openAssignShelf(s.id)}>
+                      <Layers className="mr-1 h-3 w-3" /> Assign Shelf
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => window.open(`/workspace/master-awb/${s.id}/label`, '_blank')}>
+                      <Printer className="mr-1 h-3 w-3" /> Print Label
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
+      ) : tab === 'stored' ? (
+        stored.length === 0 ? <EmptyState icon={<Layers className="h-12 w-12" />} title="No stored shipments" description="Stored shipments will appear here." />
+        : <div className="divide-y divide-gray-100 dark:divide-gray-800 rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            {stored.map((s: any) => (
+              <div key={s.id} className="flex items-center justify-between px-5 py-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{s.awbNumber}</p>
+                  <p className="text-xs text-gray-500">{s.awbPieces} pcs · {s.awbWeight} kg</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => router.push(`/workspace/master-awb/${s.id}`)}><Package className="mr-1 h-3 w-3" /> View Shipment</Button>
+                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => router.push(`/workspace/customers?s=${s.senderName || s.receiverName}`)}><User className="mr-1 h-3 w-3" /> View Customer</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+      ) : (
+        billing.length === 0 ? <EmptyState icon={<DollarSign className="h-12 w-12" />} title="No pending billing" description="Invoices are awaiting payment." />
+        : <div className="divide-y divide-gray-100 dark:divide-gray-800 rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            {billing.map((s: any) => (
+              <div key={s.id} className="flex items-center justify-between px-5 py-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{s.awbNumber}</p>
+                  <p className="text-xs text-gray-500">
+                    <DollarSign className="inline h-3 w-3" /> Invoice pending payment
+                  </p>
+                </div>
+                <StatusBadge status="warning" label={s.workflowStatus?.replace(/_/g, ' ') || 'Waiting Payment'} />
+              </div>
+            ))}
+          </div>
       )}
+
+      {assignEntity && (isMobile ? (
+        <BottomSheet
+          open={!!assignEntity}
+          onClose={() => { setAssignEntity(null); setSelectedZone(''); setSelectedLocation(''); }}
+          title="Assign Shelf Location"
+          description="Select zone and location for storage"
+        >
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Zone</label>
+              <select value={selectedZone} onChange={e => onZoneChange(e.target.value)}
+                className="flex h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                <option value="">Select zone...</option>
+                {zones.map((z: any) => <option key={z.id} value={z.id}>{z.code} — {z.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Location</label>
+              <select value={selectedLocation} onChange={e => setSelectedLocation(e.target.value)} disabled={!selectedZone || loadingLocations}
+                className="flex h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                <option value="">{loadingLocations ? 'Loading...' : 'Select location...'}</option>
+                {locations.map((l: any) => <option key={l.id} value={l.id}>{l.code}</option>)}
+              </select>
+            </div>
+            <Button className="w-full bg-[#d00020] text-white hover:bg-[#d00020]/90" onClick={handleAssignShelf} disabled={!selectedLocation || assignSaving}>
+              {assignSaving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+              {assignSaving ? 'Assigning...' : 'Confirm Assignment'}
+            </Button>
+          </div>
+        </BottomSheet>
+      ) : (
+        <Dialog open={!!assignEntity} onOpenChange={(v) => { if (!v) { setAssignEntity(null); setSelectedZone(''); setSelectedLocation(''); } }}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Assign Shelf Location</DialogTitle>
+              <DialogDescription>Select a zone and storage location for this shipment.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Zone</label>
+                <select value={selectedZone} onChange={e => onZoneChange(e.target.value)}
+                  className="flex h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                  <option value="">Select zone...</option>
+                  {zones.map((z: any) => <option key={z.id} value={z.id}>{z.code} — {z.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Location</label>
+                <select value={selectedLocation} onChange={e => setSelectedLocation(e.target.value)} disabled={!selectedZone || loadingLocations}
+                  className="flex h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                  <option value="">{loadingLocations ? 'Loading...' : 'Select location...'}</option>
+                  {locations.map((l: any) => <option key={l.id} value={l.id}>{l.code}</option>)}
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" size="sm" onClick={() => { setAssignEntity(null); setSelectedZone(''); setSelectedLocation(''); }}>Cancel</Button>
+                <Button size="sm" className="bg-[#d00020] text-white hover:bg-[#d00020]/90" onClick={handleAssignShelf} disabled={!selectedLocation || assignSaving}>
+                  {assignSaving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                  {assignSaving ? 'Assigning...' : 'Confirm Assignment'}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      ))}
     </div>
   );
 }

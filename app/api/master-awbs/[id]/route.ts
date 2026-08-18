@@ -5,6 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { CargoStatus } from "@/types/cargo-domain";
 import { syncWorkflowStageOnStatusChange } from "@/features/cargo/workflows/workflow-stage.workflow";
 import { createAuditLog } from "@/services/audit";
+import { workflowEngine } from "@/lib/workflow-engine";
+import { getModuleForStatus, findTransitionByStatuses } from "@/lib/workflow-engine/definitions";
+import { WorkflowContext } from "@/lib/workflow-engine/types";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +68,7 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
   const { id } = await params;
   const existing = await prisma.masterAWB.findFirst({
     where: { id,  deletedAt: null },
-    include: { houseAWBs: { where: { deletedAt: null }, select: { id: true } } },
+    include: { houseAWBs: { where: { deletedAt: null }, select: { id: true, workflowStatus: true } } },
   });
 
   if (!existing) {
@@ -75,7 +78,7 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
   const body = await req.json();
 
   const allowedFields = [
-    "cargoStatus", "warehouseStatus", "billingStatus",
+    "cargoStatus", "warehouseStatus", "billingStatus", "workflowStatus", "workflowStage",
     "airlineId", "flightNumber", "departureTime", "arrivalTime",
     "currentStationId",
     "awbPieces", "awbWeight", "volume", "chargeableWeight",
@@ -94,6 +97,32 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
       } else {
         data[key] = body[key];
       }
+    }
+  }
+
+  if (data.workflowStatus && existing.workflowStatus !== data.workflowStatus) {
+    const transition = findTransitionByStatuses(existing.workflowStatus, data.workflowStatus as string);
+    if (transition) {
+      const module = getModuleForStatus(existing.workflowStatus);
+      if (module) {
+        const context: WorkflowContext = {
+          entityType: "MasterAWB",
+          entityId: id,
+          fromStatus: existing.workflowStatus,
+          toStatus: data.workflowStatus as string,
+          module,
+          userId: session.user.id!,
+          departmentId: session.user.departmentId || undefined,
+          metadata: { action: transition.action, ...body },
+        };
+        Object.defineProperty(context, "action", { value: transition.action, enumerable: true });
+        await workflowEngine.execute(context);
+      }
+    } else {
+      await prisma.masterAWB.update({
+        where: { id },
+        data: { workflowStatus: data.workflowStatus as string } as any,
+      });
     }
   }
 
@@ -162,7 +191,7 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
           houseAWBId: hawb.id,
           masterAWBId: id,
           customerId: hawb.shipperId,
-          status: 'UNPAID',
+          status: 'WAITING_PAYMENT',
           totalAmount: hawb.freight,
           currency: hawb.currency,
           billingCharges: {
@@ -175,10 +204,10 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
 
       await prisma.houseAWB.update({
         where: { id: hawb.id },
-        data: { billingStatus: 'UNPAID' as any },
+        data: { billingStatus: 'WAITING_PAYMENT' as any },
       });
     }
-    data.billingStatus = 'UNPAID';
+    data.billingStatus = 'WAITING_PAYMENT';
   }
 
   const updated = await prisma.masterAWB.update({

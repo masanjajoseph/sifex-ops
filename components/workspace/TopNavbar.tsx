@@ -10,7 +10,7 @@ import {
   Settings,
   User,
 } from "lucide-react";
-import Image from "next/image";
+import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function TopNavbar() {
@@ -28,15 +28,7 @@ export function TopNavbar() {
   return (
     <header className="h-14 flex items-center gap-3 px-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shrink-0 z-30">
       {/* Logo */}
-      <a href="/workspace" className="flex items-center shrink-0">
-        <Image
-          src="/logo.png"
-          alt="Sifex"
-          width={90}
-          height={36}
-          className="w-[90px] h-9 object-contain"
-        />
-      </a>
+      <Logo href="/workspace" size="md" container />
 
       {/* Search bar */}
       <div className="flex-1 max-w-md mx-4 hidden md:block">

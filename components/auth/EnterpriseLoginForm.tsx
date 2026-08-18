@@ -35,19 +35,25 @@ export function EnterpriseLoginForm() {
   const onSubmit = useCallback(async (data: LoginFormData) => {
     setServerError(null);
 
-    const result = await signIn("credentials", {
-      email: data.email,
-      password: data.password,
-      redirect: false,
-    });
+    try {
+      const result = await signIn("credentials", {
+        email: data.email,
+        password: data.password,
+        redirect: false,
+      });
 
-    if (result?.error) {
-      setServerError("Invalid credentials. Please try again.");
-      return;
+      if (result?.error) {
+        setServerError("Invalid credentials. Please try again.");
+        return;
+      }
+
+      // Brief pause for session cookie propagation
+      await new Promise((r) => setTimeout(r, 300));
+      router.push("/workspace");
+    } catch (err) {
+      console.error("[login] signIn failed", err);
+      setServerError("Authentication failed. Please try again.");
     }
-
-    router.push("/workspace");
-    router.refresh();
   }, [router]);
 
   const checkCapsLock = useCallback((e: React.KeyboardEvent) => {

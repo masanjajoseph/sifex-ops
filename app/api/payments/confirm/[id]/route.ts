@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { apiError, withErrorHandler, NotFoundError } from "@/lib/errors";
 import { hasPermission } from "@/lib/permissions";
+import { syncWorkflowStage } from "@/features/cargo/workflows/workflow-stage.workflow";
 
 export const dynamic = "force-dynamic";
 
@@ -63,8 +64,11 @@ export const POST = withErrorHandler(async (req: NextRequest, { params }: { para
       data: {
         billingStatus: "PAID",
         paymentMethod: paymentMethod as any,
+        cargoStatus: "AWAITING_DELIVERY",
       },
     });
+
+    await syncWorkflowStage("HouseAWB", record.houseAWBId, "AWAITING_DELIVERY" as any, session.user.id!);
   }
 
   await prisma.trackingEvent.create({

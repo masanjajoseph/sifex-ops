@@ -19,27 +19,63 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const search = searchParams.get("search") || undefined;
   const scope = searchParams.get("scope") || undefined;
 
-  const where: Record<string, unknown> = {
-    
-    deletedAt: null,
-  };
-  if (status) where.cargoStatus = status;
+  const searchOr = search ? [
+    { awbNumber: { contains: search, mode: "insensitive" } },
+    { trackingNumber: { contains: search, mode: "insensitive" } },
+    { senderName: { contains: search, mode: "insensitive" } },
+    { receiverName: { contains: search, mode: "insensitive" } },
+  ] : undefined;
+
+  let where: any = { deletedAt: null };
+  if (status) where.workflowStatus = status;
   if (scope === "export") {
-    where.workflowStage = WorkflowStage.EXPORT;
-  } else if (scope === "import") {
-    where.workflowStage = WorkflowStage.IMPORT;
-  } else if (scope === "warehouse") {
-    where.workflowStage = WorkflowStage.WAREHOUSE;
-  } else if (scope === "delivery") {
-    where.workflowStage = WorkflowStage.DELIVERY;
-  }
-  if (search) {
-    where.OR = [
-      { awbNumber: { contains: search, mode: "insensitive" } },
-      { trackingNumber: { contains: search, mode: "insensitive" } },
-      { senderName: { contains: search, mode: "insensitive" } },
-      { receiverName: { contains: search, mode: "insensitive" } },
+    where.AND = [
+      { workflowStage: WorkflowStage.EXPORT },
+      ...(searchOr ? [{ OR: searchOr }] : []),
     ];
+    if (status) where.AND.push({ workflowStatus: status });
+  } else if (scope === "import") {
+    where.AND = [
+      {
+        OR: [
+          { workflowStage: WorkflowStage.IMPORT },
+          { workflowStatus: "DISPATCHED" },
+          { workflowStatus: "IN_TRANSIT" },
+          { workflowStatus: "PRE_ARRIVAL" },
+          { workflowStatus: "TERMINAL_ARRIVED" },
+          { workflowStatus: "MANIFEST_VERIFIED" },
+          { workflowStatus: "MAWB_RECEIVED" },
+          { workflowStatus: "RECEIVED" },
+          { workflowStatus: "DOCUMENTS_VERIFIED" },
+          { workflowStatus: "PIECES_VERIFIED" },
+          { workflowStatus: "WEIGHT_VERIFIED" },
+          { workflowStatus: "DAMAGE_INSPECTED" },
+          { workflowStatus: "CUSTOMS_SUBMITTED" },
+          { workflowStatus: "CUSTOMS_ASSESSED" },
+          { workflowStatus: "CUSTOMS_PAID" },
+          { workflowStatus: "CUSTOMS_INSPECTION" },
+          { workflowStatus: "CUSTOMS_CLEARED" },
+          { workflowStatus: "WAREHOUSE_RECEIVING" },
+          { workflowStatus: "EXCEPTION" },
+        ],
+      },
+      ...(searchOr ? [{ OR: searchOr }] : []),
+    ];
+    if (status) where.AND.push({ workflowStatus: status });
+  } else if (scope === "warehouse") {
+    where.AND = [
+      { workflowStage: WorkflowStage.WAREHOUSE },
+      ...(searchOr ? [{ OR: searchOr }] : []),
+    ];
+    if (status) where.AND.push({ workflowStatus: status });
+  } else if (scope === "delivery") {
+    where.AND = [
+      { workflowStage: WorkflowStage.DELIVERY },
+      ...(searchOr ? [{ OR: searchOr }] : []),
+    ];
+    if (status) where.AND.push({ workflowStatus: status });
+  } else {
+    if (searchOr) where.OR = searchOr;
   }
 
   const [items, total] = await Promise.all([

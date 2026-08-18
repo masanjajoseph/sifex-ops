@@ -16,7 +16,7 @@ export const isFeatureEnabled = (flag: FeatureFlag): boolean =>
 
 // App-level constants
 export const APP_CONFIG = {
-  name: process.env.NEXT_PUBLIC_APP_NAME ?? "Sifex ERP",
+  name: process.env.NEXT_PUBLIC_APP_NAME ?? "Sifex Air Cargo",
   url: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
   version: "1.0.0",
   sessionMaxAge: 8 * 60 * 60, // 8 hours in seconds
