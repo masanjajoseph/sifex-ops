@@ -55,14 +55,50 @@ const features = [
   { icon: DollarSign, title: "Multi-Currency Billing", description: "Automated invoicing, payment reconciliation, and credit control" },
 ];
 
-const metrics = [
-  { label: "Active Shipments", value: 2847 },
-  { label: "Flights In Transit", value: 142 },
-  { label: "Warehouse Capacity", value: 76, suffix: "%" },
-  { label: "Delivery Success", value: 99.2, suffix: "%", decimals: 1 },
-];
+const METRIC_KEYS = ["activeShipments", "flightsInTransit", "warehouseCapacity", "deliverySuccess"] as const;
+type MetricKey = (typeof METRIC_KEYS)[number];
+
+const defaultMetrics: Record<MetricKey, number> = {
+  activeShipments: 0,
+  flightsInTransit: 0,
+  warehouseCapacity: 0,
+  deliverySuccess: 0,
+};
 
 export function LoginHero() {
+  const [metrics, setMetrics] = useState<Record<MetricKey, number>>(defaultMetrics);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/public/operations", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((body) => {
+        if (cancelled) return;
+        const data = body?.data ?? body;
+        setMetrics((prev) => ({
+          activeShipments: data.activeShipments ?? prev.activeShipments,
+          flightsInTransit: data.flightsInTransit ?? prev.flightsInTransit,
+          warehouseCapacity: data.warehouseCapacity ?? prev.warehouseCapacity,
+          deliverySuccess: data.deliverySuccess ?? prev.deliverySuccess,
+        }));
+      })
+      .catch((err) => {
+        if (!cancelled) console.error("[LoginHero] failed to load live operations", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const metricList: { label: string; value: number; suffix?: string; decimals?: number }[] = [
+    { label: "Active Shipments", value: metrics.activeShipments },
+    { label: "Flights In Transit", value: metrics.flightsInTransit },
+    { label: "Warehouse Capacity", value: metrics.warehouseCapacity, suffix: "%" },
+    { label: "Delivery Success", value: metrics.deliverySuccess, suffix: "%", decimals: 1 },
+  ];
+
   return (
     <motion.div
       variants={containerVariants}
@@ -96,7 +132,7 @@ export function LoginHero() {
       <motion.div variants={itemVariants} className="space-y-3">
         <p className="text-[10px] uppercase tracking-widest text-white/30 font-semibold">Live Operations</p>
         <div className="grid grid-cols-4 gap-3">
-          {metrics.map((m) => (
+          {metricList.map((m) => (
             <div key={m.label} className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
               <p className="text-lg font-bold text-white tabular-nums tracking-tight">
                 <AnimatedCounter value={m.value} suffix={m.suffix} decimals={m.decimals} />
