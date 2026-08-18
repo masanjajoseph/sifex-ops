@@ -66,6 +66,30 @@ export function pinChangedEmailTemplate(): string {
   `, 'Security Alert');
 }
 
+export function passwordResetEmailTemplate(params: {
+  resetUrl: string;
+}): string {
+  return baseTemplate(`
+    <h2 style="margin:0 0 8px;font-size:18px;color:#111">Reset Your Password</h2>
+    <p style="margin:0 0 4px;color:#555;font-size:14px">
+      We received a request to reset the password for your SIFEX account.
+    </p>
+    <p style="margin:12px 0 0;color:#555;font-size:14px">
+      Click the button below to choose a new password. This link expires in 1 hour.
+    </p>
+    <div style="margin:24px 0">
+      <a href="${params.resetUrl}" class="btn">Reset Password</a>
+    </div>
+    <p style="margin:12px 0 0;color:#888;font-size:13px">
+      If the button does not work, copy and paste this link into your browser:
+    </p>
+    <p style="margin:4px 0 0;color:#666;font-size:12px;word-break:break-all">${params.resetUrl}</p>
+    <div class="info">
+      <strong>Security Tip:</strong> If you did not request a password reset, please ignore this email. Your password will not be changed.
+    </div>
+  `, 'Reset Your Password');
+}
+
 export function invoiceSignedEmailTemplate(params: {
   invoiceId: string;
   signedByName: string;

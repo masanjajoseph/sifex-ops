@@ -4,14 +4,25 @@ const IMAGEKIT_PUBLIC_KEY = process.env.IMAGEKIT_PUBLIC_KEY || '';
 const IMAGEKIT_PRIVATE_KEY = process.env.IMAGEKIT_PRIVATE_KEY || '';
 const IMAGEKIT_URL_ENDPOINT = process.env.IMAGEKIT_URL_ENDPOINT || '';
 
-export const imagekit = new ImageKit({
-  publicKey: IMAGEKIT_PUBLIC_KEY,
-  privateKey: IMAGEKIT_PRIVATE_KEY,
-  urlEndpoint: IMAGEKIT_URL_ENDPOINT,
-});
+let imagekit: ImageKit | null = null;
+
+function getImageKit(): ImageKit {
+  if (imagekit) return imagekit;
+  if (!IMAGEKIT_PUBLIC_KEY || !IMAGEKIT_PRIVATE_KEY || !IMAGEKIT_URL_ENDPOINT) {
+    throw new Error(
+      'ImageKit is not configured: missing IMAGEKIT_PUBLIC_KEY, IMAGEKIT_PRIVATE_KEY, or IMAGEKIT_URL_ENDPOINT'
+    );
+  }
+  imagekit = new ImageKit({
+    publicKey: IMAGEKIT_PUBLIC_KEY,
+    privateKey: IMAGEKIT_PRIVATE_KEY,
+    urlEndpoint: IMAGEKIT_URL_ENDPOINT,
+  });
+  return imagekit;
+}
 
 export function getImageKitAuth() {
-  return imagekit.getAuthenticationParameters();
+  return getImageKit().getAuthenticationParameters();
 }
 
 export function getImageUrl(path: string, options?: { width?: number; height?: number; quality?: number }): string {

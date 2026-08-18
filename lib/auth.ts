@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { type Session } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
@@ -14,7 +14,7 @@ const {
   handlers: nextHandlers,
   signIn,
   signOut,
-  auth,
+  auth: nextAuthAuth,
 } = NextAuth({
   secret: process.env.AUTH_SECRET,
   adapter: PrismaAdapter(prisma),
@@ -196,4 +196,8 @@ const {
 });
 
 export const handlers = nextHandlers;
-export { signIn, signOut, auth };
+export { signIn, signOut };
+
+export async function auth(): Promise<Session | null> {
+  return (await nextAuthAuth()) as Session | null;
+}
