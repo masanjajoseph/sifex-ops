@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
-import { queues } from "@/jobs";
+import { getQueues, isQueueConfigured } from "@/jobs";
 
 export async function GET() {
+  const queues = getQueues();
+  if (!queues) {
+    return NextResponse.json({
+      success: true,
+      queues: {},
+      note: isQueueConfigured() ? "Queues unavailable" : "REDIS_URL not configured",
+    });
+  }
   const results: Record<string, unknown> = {};
   for (const [name, queue] of Object.entries(queues)) {
     const [waiting, active, completed, failed] = await Promise.all([

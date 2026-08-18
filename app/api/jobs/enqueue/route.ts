@@ -9,6 +9,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Invalid queue" }, { status: 400 });
     }
     const job = await enqueue(queue, jobName, data, options);
+    if (!job) {
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        note: "REDIS_URL not configured",
+      });
+    }
     return NextResponse.json({ success: true, jobId: job.id });
   } catch (error) {
     console.error("[Enqueue Error]", error);
