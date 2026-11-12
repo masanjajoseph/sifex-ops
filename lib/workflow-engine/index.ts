@@ -828,6 +828,45 @@ export class WorkflowEngine {
         },
       });
     }
+
+    if (entityType === "MasterAWB") {
+      const hawbs = await tx.houseAWB.findMany({
+        where: { masterAWBId: entityId, deletedAt: null },
+        include: { receiver: true },
+      });
+
+      let taskCount = await tx.deliveryTask.count();
+
+      for (const hawb of hawbs) {
+        const existing = await tx.deliveryTask.findFirst({
+          where: { houseAWBId: hawb.id, deletedAt: null },
+          select: { id: true },
+        });
+        if (existing) continue;
+
+        taskCount += 1;
+        await tx.deliveryTask.create({
+          data: {
+            taskNumber: `TASK-${String(taskCount).padStart(6, '0')}`,
+            houseAWBId: hawb.id,
+            masterAWBId: entityId,
+            customerName: hawb.receiver?.name || null,
+            deliveryAddress: hawb.receiver?.address || null,
+            status: "WAITING_ASSIGNMENT",
+            createdById: userId,
+          },
+        });
+
+        await tx.houseAWB.update({
+          where: { id: hawb.id },
+          data: {
+            workflowStatus: "WAITING_DELIVERY",
+            workflowStage: WorkflowStage.DELIVERY,
+            cargoStatus: CargoStatus.AWAITING_DELIVERY,
+          },
+        });
+      }
+    }
   }
 
   private async executeAutoTransitions(
