@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { apiError, withErrorHandler, NotFoundError } from "@/lib/errors";
 import { hasPermission } from "@/lib/permissions";
 import { syncWorkflowStage } from "@/features/cargo/workflows/workflow-stage.workflow";
+import { workflowEngine } from "@/lib/workflow-engine";
+import { WorkflowModule } from "@/lib/workflow-engine/types";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +71,36 @@ export const POST = withErrorHandler(async (req: NextRequest, { params }: { para
     });
 
     await syncWorkflowStage("HouseAWB", record.houseAWBId, "AWAITING_DELIVERY" as any, session.user.id!);
+  }
+
+  // Payment confirmation is the trigger for the billing → delivery workflow:
+  // WAITING_PAYMENT → PAID (creates the delivery task in the engine).
+  if (record.masterAWBId) {
+    const mawb = await prisma.masterAWB.findFirst({
+      where: { id: record.masterAWBId, deletedAt: null },
+      select: { workflowStatus: true },
+    });
+
+    if (mawb?.workflowStatus === "WAITING_PAYMENT") {
+      const workflowContext = {
+        entityType: "MasterAWB" as const,
+        entityId: record.masterAWBId,
+        fromStatus: "WAITING_PAYMENT",
+        toStatus: "PAID",
+        module: WorkflowModule.BILLING,
+        userId: session.user.id!,
+        departmentId: session.user.departmentId || undefined,
+        userPermissions: session.user.permissions?.length ? session.user.permissions : undefined,
+        metadata: { action: "RECEIVE_PAYMENT", billingRecordId: id, paymentMethod },
+      };
+
+      Object.defineProperty(workflowContext, "action", {
+        value: "RECEIVE_PAYMENT",
+        enumerable: true,
+      });
+
+      await workflowEngine.execute(workflowContext);
+    }
   }
 
   await prisma.trackingEvent.create({
