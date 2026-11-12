@@ -2,6 +2,7 @@
 
 import type { Variants } from "framer-motion";
 import { motion } from "framer-motion";
+import { Logo } from "@/components/ui/Logo";
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -24,12 +25,9 @@ export function LoginHero() {
       animate="visible"
       className="max-w-lg space-y-5"
     >
-      <motion.p
-        variants={itemVariants}
-        className="text-[10px] uppercase tracking-[0.3em] text-red-400/90 font-semibold"
-      >
-        Sifex Air Cargo
-      </motion.p>
+      <motion.div variants={itemVariants}>
+        <Logo size="lg" priority container />
+      </motion.div>
 
       <motion.h1
         variants={itemVariants}
