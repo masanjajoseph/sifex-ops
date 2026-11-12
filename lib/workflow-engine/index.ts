@@ -486,7 +486,7 @@ export class WorkflowEngine {
         newWorkflowStage: workflowStage,
         auditLogId: null,
       };
-    });
+    }, { maxWait: 10000, timeout: 30000 });
 
     return result;
   }
