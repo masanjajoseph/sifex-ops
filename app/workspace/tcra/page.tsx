@@ -7,7 +7,20 @@ import {
   CheckCircle2,
   Clock,
   RotateCcw,
+  ShieldCheck,
+  ShieldAlert,
+  Link2,
 } from "lucide-react";
+
+interface TcraStatus {
+  baseUrl: string;
+  environment: string;
+  integrationId: string | null;
+  tokenId: string | null;
+  signatureConfigured: boolean;
+  signatureValid: boolean;
+  endpoints: Record<string, string>;
+}
 
 interface TcraOutboxItem {
   id: string;
@@ -31,6 +44,7 @@ export default function TcraMonitorPage() {
   const [processing, setProcessing] = useState(false);
   const [filter, setFilter] = useState<FilterStatus | "ALL">("ALL");
   const [error, setError] = useState("");
+  const [status, setStatus] = useState<TcraStatus | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);

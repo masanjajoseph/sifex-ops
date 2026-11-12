@@ -115,25 +115,25 @@ const importQuickActions: Record<string, QuickAction[]> = {
   ],
   [ImportWorkflowStatus.WEIGHT_VERIFIED]: [
     { id: "complete-inspection", label: "Complete Inspection", action: "COMPLETE_INSPECTION", icon: "CheckCircle", variant: "primary", requiresPermission: "import.update" },
-    { id: "submit-customs", label: "Submit Customs", action: "SUBMIT_CUSTOMS", icon: "FileText", variant: "outline", requiresPermission: "customs.broker" },
+    { id: "submit-customs", label: "Submit Customs", action: "SUBMIT_CUSTOMS", icon: "FileText", variant: "outline", requiresPermission: "customs.update" },
   ],
   [ImportWorkflowStatus.DAMAGE_INSPECTED]: [
-    { id: "submit-customs-di", label: "Submit Customs Declaration", action: "SUBMIT_CUSTOMS", icon: "FileText", variant: "primary", requiresPermission: "customs.broker" },
+    { id: "submit-customs-di", label: "Submit Customs Declaration", action: "SUBMIT_CUSTOMS", icon: "FileText", variant: "primary", requiresPermission: "customs.update" },
     { id: "print-inspection-report", label: "Print Report", action: "PRINT_INSPECTION_REPORT", icon: "Printer", variant: "outline" },
   ],
   [ImportWorkflowStatus.CUSTOMS_SUBMITTED]: [
-    { id: "record-assessment", label: "Check Assessment", action: "RECORD_ASSESSMENT", icon: "DollarSign", variant: "primary", requiresPermission: "customs.broker" },
+    { id: "record-assessment", label: "Check Assessment", action: "RECORD_ASSESSMENT", icon: "DollarSign", variant: "primary", requiresPermission: "customs.update" },
   ],
   [ImportWorkflowStatus.CUSTOMS_ASSESSED]: [
     { id: "record-duty-payment", label: "Record Payment", action: "RECORD_DUTY_PAYMENT", icon: "DollarSign", variant: "primary", requiresPermission: "billing.payment", requiresConfirmation: true, confirmationMessage: "Confirm duty/tax payment received?" },
     { id: "print-assessment", label: "Print Assessment", action: "PRINT_ASSESSMENT", icon: "Printer", variant: "outline" },
   ],
   [ImportWorkflowStatus.CUSTOMS_PAID]: [
-    { id: "schedule-inspection", label: "Schedule Inspection", action: "SCHEDULE_INSPECTION", icon: "Calendar", variant: "outline", requiresPermission: "customs.broker" },
+    { id: "schedule-inspection", label: "Schedule Inspection", action: "SCHEDULE_INSPECTION", icon: "Calendar", variant: "outline", requiresPermission: "customs.update" },
   ],
   [ImportWorkflowStatus.CUSTOMS_INSPECTION]: [
-    { id: "customs-released", label: "Record Release", action: "CUSTOMS_RELEASED", icon: "CheckCircle", variant: "primary", requiresPermission: "customs.broker" },
-    { id: "report-hold", label: "Report Hold", action: "REPORT_HOLD", icon: "XCircle", variant: "danger", requiresPermission: "customs.broker" },
+    { id: "customs-released", label: "Record Release", action: "CUSTOMS_RELEASED", icon: "CheckCircle", variant: "primary", requiresPermission: "customs.update" },
+    { id: "report-hold", label: "Report Hold", action: "REPORT_HOLD", icon: "XCircle", variant: "danger", requiresPermission: "customs.update" },
   ],
   [ImportWorkflowStatus.CUSTOMS_HOLD]: [
     { id: "resolve-hold", label: "Resolve Hold", action: "RESOLVE_HOLD", icon: "CheckCircle", variant: "primary", requiresPermission: "import.update", requiresConfirmation: true, confirmationMessage: "Confirm customs hold resolved?" },
@@ -146,7 +146,7 @@ const importQuickActions: Record<string, QuickAction[]> = {
   ],
   [ImportWorkflowStatus.WAREHOUSE_RECEIVING]: [],
   [ImportWorkflowStatus.EXCEPTION]: [
-    { id: "resolve-exception", label: "Resolve Exception", action: "RESOLVE_EXCEPTION", icon: "CheckCircle", variant: "primary", requiresPermission: "import.manager", requiresConfirmation: true, confirmationMessage: "Resolve this exception and return to workflow?" },
+    { id: "resolve-exception", label: "Resolve Exception", action: "RESOLVE_EXCEPTION", icon: "CheckCircle", variant: "primary", requiresPermission: "import.approve", requiresConfirmation: true, confirmationMessage: "Resolve this exception and return to workflow?" },
     { id: "view-exception-detail", label: "View Details", action: "VIEW_EXCEPTION", icon: "FileText", variant: "outline" },
   ],
 };
@@ -176,12 +176,12 @@ const importTransitions: WorkflowTransition[] = [
   { from: ImportWorkflowStatus.WEIGHT_VERIFIED, to: ImportWorkflowStatus.DAMAGE_INSPECTED, action: "COMPLETE_INSPECTION", requiredPermission: "import.update", auditEvent: "import.damage_inspected" },
 
   // Customs sub-workflow
-  { from: ImportWorkflowStatus.DAMAGE_INSPECTED, to: ImportWorkflowStatus.CUSTOMS_SUBMITTED, action: "SUBMIT_CUSTOMS", requiredPermission: "customs.broker", auditEvent: "import.customs_submitted", notificationEvent: "IMPORT_CUSTOMS_SUBMITTED" },
-  { from: ImportWorkflowStatus.CUSTOMS_SUBMITTED, to: ImportWorkflowStatus.CUSTOMS_ASSESSED, action: "RECORD_ASSESSMENT", requiredPermission: "customs.broker", auditEvent: "import.customs_assessed" },
+  { from: ImportWorkflowStatus.DAMAGE_INSPECTED, to: ImportWorkflowStatus.CUSTOMS_SUBMITTED, action: "SUBMIT_CUSTOMS", requiredPermission: "customs.update", auditEvent: "import.customs_submitted", notificationEvent: "IMPORT_CUSTOMS_SUBMITTED" },
+  { from: ImportWorkflowStatus.CUSTOMS_SUBMITTED, to: ImportWorkflowStatus.CUSTOMS_ASSESSED, action: "RECORD_ASSESSMENT", requiredPermission: "customs.update", auditEvent: "import.customs_assessed" },
   { from: ImportWorkflowStatus.CUSTOMS_ASSESSED, to: ImportWorkflowStatus.CUSTOMS_PAID, action: "RECORD_DUTY_PAYMENT", requiredPermission: "billing.payment", auditEvent: "import.customs_paid" },
-  { from: ImportWorkflowStatus.CUSTOMS_PAID, to: ImportWorkflowStatus.CUSTOMS_INSPECTION, action: "SCHEDULE_INSPECTION", requiredPermission: "customs.broker", auditEvent: "import.customs_inspection" },
-  { from: ImportWorkflowStatus.CUSTOMS_INSPECTION, to: ImportWorkflowStatus.CUSTOMS_CLEARED, action: "CUSTOMS_RELEASED", requiredPermission: "customs.broker", auditEvent: "import.customs_released", notificationEvent: "IMPORT_CUSTOMS_CLEARED" },
-  { from: ImportWorkflowStatus.CUSTOMS_INSPECTION, to: ImportWorkflowStatus.CUSTOMS_HOLD, action: "REPORT_HOLD", requiredPermission: "customs.broker", auditEvent: "import.customs_hold", notificationEvent: "IMPORT_CUSTOMS_HOLD", notificationTargetModule: WorkflowModule.IMPORT, notificationMessage: "Customs hold placed on shipment. Action required." },
+  { from: ImportWorkflowStatus.CUSTOMS_PAID, to: ImportWorkflowStatus.CUSTOMS_INSPECTION, action: "SCHEDULE_INSPECTION", requiredPermission: "customs.update", auditEvent: "import.customs_inspection" },
+  { from: ImportWorkflowStatus.CUSTOMS_INSPECTION, to: ImportWorkflowStatus.CUSTOMS_CLEARED, action: "CUSTOMS_RELEASED", requiredPermission: "customs.update", auditEvent: "import.customs_released", notificationEvent: "IMPORT_CUSTOMS_CLEARED" },
+  { from: ImportWorkflowStatus.CUSTOMS_INSPECTION, to: ImportWorkflowStatus.CUSTOMS_HOLD, action: "REPORT_HOLD", requiredPermission: "customs.update", auditEvent: "import.customs_hold", notificationEvent: "IMPORT_CUSTOMS_HOLD", notificationTargetModule: WorkflowModule.IMPORT, notificationMessage: "Customs hold placed on shipment. Action required." },
   { from: ImportWorkflowStatus.CUSTOMS_HOLD, to: ImportWorkflowStatus.CUSTOMS_CLEARED, action: "RESOLVE_HOLD", requiredPermission: "import.update", auditEvent: "import.customs_hold_resolved", notificationEvent: "IMPORT_CUSTOMS_CLEARED" },
 
   // Warehouse handover
@@ -194,11 +194,11 @@ const importTransitions: WorkflowTransition[] = [
   { from: ImportWorkflowStatus.DOCUMENTS_VERIFIED, to: ImportWorkflowStatus.EXCEPTION, action: "REPORT_MISSING", requiredPermission: "import.update", auditEvent: "import.missing_reported" },
   { from: ImportWorkflowStatus.PIECES_VERIFIED, to: ImportWorkflowStatus.EXCEPTION, action: "REPORT_DAMAGE", requiredPermission: "import.update", auditEvent: "import.damage_reported" },
   { from: ImportWorkflowStatus.PIECES_VERIFIED, to: ImportWorkflowStatus.EXCEPTION, action: "REPORT_MISSING", requiredPermission: "import.update", auditEvent: "import.missing_reported" },
-  { from: ImportWorkflowStatus.EXCEPTION, to: ImportWorkflowStatus.RECEIVED, action: "RESOLVE_EXCEPTION", requiredPermission: "import.manager", auditEvent: "import.exception_resolved", notificationEvent: "IMPORT_EXCEPTION_RESOLVED" },
-  { from: ImportWorkflowStatus.EXCEPTION, to: ImportWorkflowStatus.DOCUMENTS_VERIFIED, action: "RESOLVE_EXCEPTION", requiredPermission: "import.manager", auditEvent: "import.exception_resolved" },
-  { from: ImportWorkflowStatus.EXCEPTION, to: ImportWorkflowStatus.PIECES_VERIFIED, action: "RESOLVE_EXCEPTION", requiredPermission: "import.manager", auditEvent: "import.exception_resolved" },
-  { from: ImportWorkflowStatus.EXCEPTION, to: ImportWorkflowStatus.WEIGHT_VERIFIED, action: "RESOLVE_EXCEPTION", requiredPermission: "import.manager", auditEvent: "import.exception_resolved" },
-  { from: ImportWorkflowStatus.EXCEPTION, to: ImportWorkflowStatus.DAMAGE_INSPECTED, action: "RESOLVE_EXCEPTION", requiredPermission: "import.manager", auditEvent: "import.exception_resolved" },
+  { from: ImportWorkflowStatus.EXCEPTION, to: ImportWorkflowStatus.RECEIVED, action: "RESOLVE_EXCEPTION", requiredPermission: "import.approve", auditEvent: "import.exception_resolved", notificationEvent: "IMPORT_EXCEPTION_RESOLVED" },
+  { from: ImportWorkflowStatus.EXCEPTION, to: ImportWorkflowStatus.DOCUMENTS_VERIFIED, action: "RESOLVE_EXCEPTION", requiredPermission: "import.approve", auditEvent: "import.exception_resolved" },
+  { from: ImportWorkflowStatus.EXCEPTION, to: ImportWorkflowStatus.PIECES_VERIFIED, action: "RESOLVE_EXCEPTION", requiredPermission: "import.approve", auditEvent: "import.exception_resolved" },
+  { from: ImportWorkflowStatus.EXCEPTION, to: ImportWorkflowStatus.WEIGHT_VERIFIED, action: "RESOLVE_EXCEPTION", requiredPermission: "import.approve", auditEvent: "import.exception_resolved" },
+  { from: ImportWorkflowStatus.EXCEPTION, to: ImportWorkflowStatus.DAMAGE_INSPECTED, action: "RESOLVE_EXCEPTION", requiredPermission: "import.approve", auditEvent: "import.exception_resolved" },
 ];
 
 const warehouseQuickActions: Record<string, QuickAction[]> = {

@@ -64,6 +64,10 @@ const envSchema = z.object({
   // TCRA integration
   TCRA_API_URL: z.string().url().optional(),
   TCRA_API_TOKEN: z.string().optional(),
+  TCRA_INTEGRATION_ID: z.string().optional(),
+  TCRA_TOKEN_ID: z.string().optional(),
+  TCRA_KEY_PATH: z.string().optional(),
+  TCRA_CERT_PATH: z.string().optional(),
   TCRA_TEST_MODE: z.coerce.boolean().default(false),
   TCRA_PRIVATE_KEY: z.string().optional(),
   TCRA_PUBLIC_KEY: z.string().optional(),
