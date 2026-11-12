@@ -9,6 +9,61 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Resolve the flight used by a manifest or flight assignment. The UI quick
+ * actions only send the action name, so fall back to the flight recorded on the
+ * Master AWB (creating it when missing) instead of failing with a 400.
+ */
+async function resolveFlightId(
+  entityId: string,
+  metadata?: Record<string, unknown>,
+): Promise<string | null> {
+  const provided = metadata?.flightId as string | undefined;
+  if (provided) return provided;
+
+  const mawb = await prisma.masterAWB.findUnique({
+    where: { id: entityId },
+    select: {
+      flightNumber: true,
+      airlineId: true,
+      departureTime: true,
+      arrivalTime: true,
+      originStationId: true,
+      destinationStationId: true,
+    },
+  });
+  if (!mawb) return null;
+
+  if (mawb.flightNumber && mawb.airlineId) {
+    const existing = await prisma.flight.findFirst({
+      where: { flightNumber: mawb.flightNumber, airlineId: mawb.airlineId },
+      orderBy: { departureTime: "asc" },
+      select: { id: true },
+    });
+    if (existing) return existing.id;
+
+    const created = await prisma.flight.create({
+      data: {
+        flightNumber: mawb.flightNumber,
+        airlineId: mawb.airlineId,
+        originStationId: mawb.originStationId,
+        destinationStationId: mawb.destinationStationId,
+        departureTime: mawb.departureTime,
+        arrivalTime: mawb.arrivalTime,
+        status: "SCHEDULED",
+      },
+      select: { id: true },
+    });
+    return created.id;
+  }
+
+  const fallback = await prisma.flight.findFirst({
+    orderBy: { departureTime: "desc" },
+    select: { id: true },
+  });
+  return fallback?.id ?? null;
+}
+
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const session = await auth();
   if (!session?.user) return apiError(new Error("Unauthorized"), 401);
@@ -68,13 +123,26 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
   // --- Special handling for ASSIGN_MAWB ---
   if (action === "ASSIGN_MAWB" && entityType === "MasterAWB") {
-    const draftHawbs = await prisma.houseAWB.findMany({
-      where: { masterAWBId: entityId, workflowStatus: "DRAFT", deletedAt: null },
+    // A MAWB transition cascades its status onto every attached HAWB, so by the
+    // time the MAWB reaches LOADED the HAWBs are LOADED too, never DRAFT.
+    // Assign every HAWB that has not been manifested yet.
+    const assignableHawbs = await prisma.houseAWB.findMany({
+      where: {
+        masterAWBId: entityId,
+        deletedAt: null,
+        workflowStatus: { notIn: ["READY_FOR_MANIFEST", "MANIFESTED"] },
+      },
       select: { id: true },
     });
 
-    if (draftHawbs.length === 0) {
-      return apiError(new AppError("No draft House AWBs to assign. Generate HAWBs first.", 400, "VALIDATION_ERROR"));
+    if (assignableHawbs.length === 0) {
+      const attached = await prisma.houseAWB.count({
+        where: { masterAWBId: entityId, deletedAt: null },
+      });
+      const message = attached === 0
+        ? "No House AWBs attached to this Master AWB. Generate HAWBs first."
+        : "All House AWBs are already assigned to the manifest.";
+      return apiError(new AppError(message, 400, "VALIDATION_ERROR"));
     }
 
     const context: WorkflowContext = {
@@ -87,8 +155,8 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       departmentId: session.user.departmentId || undefined,
       userPermissions: session.user.permissions?.length ? session.user.permissions : undefined,
       hawbToStatus: "READY_FOR_MANIFEST",
-      relatedHaWbIds: draftHawbs.map(h => h.id),
-      metadata: { action, assignedHawbCount: draftHawbs.length, ...(metadata || {}) },
+      relatedHaWbIds: assignableHawbs.map(h => h.id),
+      metadata: { action, assignedHawbCount: assignableHawbs.length, ...(metadata || {}) },
     };
 
     Object.defineProperty(context, "action", { value: action, enumerable: true });
@@ -123,9 +191,9 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       return apiError(new AppError("Manifest already exists for this Master AWB.", 400, "VALIDATION_ERROR"));
     }
 
-    const flightId = metadata?.flightId as string;
+    const flightId = await resolveFlightId(entityId, metadata);
     if (!flightId) {
-      return apiError(new AppError("flightId is required in metadata to generate a manifest.", 400, "VALIDATION_ERROR"));
+      return apiError(new AppError("No flight found for this Master AWB. Assign a flight number first.", 400, "VALIDATION_ERROR"));
     }
 
     const context: WorkflowContext = {
@@ -148,9 +216,9 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
   // --- Special handling for ASSIGN_FLIGHT ---
   if (action === "ASSIGN_FLIGHT" && entityType === "MasterAWB") {
-    const flightId = metadata?.flightId as string;
+    const flightId = await resolveFlightId(entityId, metadata);
     if (!flightId) {
-      return apiError(new AppError("flightId is required in metadata to assign a flight.", 400, "VALIDATION_ERROR"));
+      return apiError(new AppError("No flight found for this Master AWB. Assign a flight number first.", 400, "VALIDATION_ERROR"));
     }
 
     const flight = await prisma.flight.findUnique({ where: { id: flightId } });

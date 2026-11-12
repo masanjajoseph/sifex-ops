@@ -331,7 +331,7 @@ export default function NewExportPage() {
         <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Master AWB has been created.</p>
         <div className="mt-6 flex gap-3">
           <Button variant="outline" onClick={() => router.push('/workspace/export')}>Back to Exports</Button>
-          <Button onClick={() => router.push(`/workspace/export/${createdId}`)}>View Shipment</Button>
+          <Button onClick={() => router.push(`/workspace/master-awb/${createdId}`)}>View Shipment</Button>
         </div>
       </div>
     );
