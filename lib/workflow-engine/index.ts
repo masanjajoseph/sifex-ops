@@ -407,6 +407,15 @@ export class WorkflowEngine {
       }
 
       if (entityType === "DeliveryTask") {
+        if (toStatus === "ASSIGNED") {
+          const riderId = (context as any).metadata?.riderId as string | undefined;
+          if (riderId) {
+            await tx.deliveryTask.update({
+              where: { id: entityId },
+              data: { assignedRiderId: riderId, assignedById: userId, assignedAt: new Date() },
+            });
+          }
+        }
         await this.syncShipmentDelivery(tx, entityId, toStatus);
       }
 

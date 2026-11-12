@@ -103,10 +103,15 @@ export default function DeliveryPage() {
     const riderId = prompt('Enter Rider ID:');
     if (!riderId) return;
     try {
-      await fetch(`/api/delivery-tasks/${taskId}`, {
-        method: 'PATCH',
+      await fetch('/api/workflow', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assignedRiderId: riderId }),
+        body: JSON.stringify({
+          entityType: 'DeliveryTask',
+          entityId: taskId,
+          action: 'ASSIGN_RIDER',
+          metadata: { riderId },
+        }),
       });
       fetchData();
     } catch {}
