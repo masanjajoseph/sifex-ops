@@ -63,7 +63,7 @@ export default function CustomerLoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <div className="mx-auto mb-4 flex items-center justify-center">
-            <Logo size="xl" priority />
+            <Logo size="xl" priority container containerClassName="bg-white p-2" />
           </div>
           <h1 className="text-2xl font-bold text-white">Customer Portal</h1>
           <p className="mt-1 text-sm text-gray-400">Track shipments, view invoices, and more</p>

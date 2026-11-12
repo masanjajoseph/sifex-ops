@@ -37,7 +37,7 @@ export default function CustomerDashboard() {
     <div className="min-h-screen bg-gray-950">
       <header className="border-b border-gray-800 bg-gray-900/50 px-4 py-3">
         <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <Logo size="sm" priority container containerClassName="bg-white" />
+          <Logo size="sm" priority container containerClassName="bg-white p-2" />
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-400">{customer?.name}</span>
             <button onClick={logout} className="text-xs text-gray-500 hover:text-gray-300">Sign out</button>

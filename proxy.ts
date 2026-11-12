@@ -6,9 +6,16 @@ export async function proxy(req: NextRequest) {
 
   console.log("[auth:middleware] start", { pathname });
 
+  // Behind the HTTPS reverse proxy the session cookie is named
+  // __Secure-authjs.session-token, so getToken() must know the request is secure.
+  const isSecure =
+    req.headers.get("x-forwarded-proto") === "https" ||
+    req.nextUrl.protocol === "https:";
+
   const token = await getToken({
     req,
     secret: process.env.AUTH_SECRET,
+    secureCookie: isSecure,
   });
 
   const isLoggedIn = !!token;

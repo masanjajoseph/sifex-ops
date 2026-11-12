@@ -33,7 +33,7 @@ export default function CustomerDocuments() {
             <button onClick={() => router.push('/customer/dashboard')} className="text-gray-400 hover:text-white">
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <Logo size="xs" priority container containerClassName="bg-white" />
+            <Logo size="xs" priority container containerClassName="bg-white p-2" />
           </div>
         </div>
       </header>

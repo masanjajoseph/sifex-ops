@@ -51,7 +51,7 @@ export default function CustomerShipments() {
             <button onClick={() => router.push('/customer/dashboard')} className="text-gray-400 hover:text-white">
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <Logo size="xs" priority container containerClassName="bg-white" />
+            <Logo size="xs" priority container containerClassName="bg-white p-2" />
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-500">{customer?.name}</span>

@@ -14,12 +14,12 @@ interface LogoProps {
   containerClassName?: string;
 }
 
-const sizeMap: Record<LogoSize, { height: number; width: number; container?: boolean }> = {
+const sizeMap: Record<LogoSize, { height: number; width: number }> = {
   xs: { height: 24, width: 60 },
   sm: { height: 32, width: 80 },
   md: { height: 36, width: 90 },
-  lg: { height: 48, width: 120, container: true },
-  xl: { height: 64, width: 160, container: true },
+  lg: { height: 48, width: 120 },
+  xl: { height: 64, width: 160 },
 };
 
 export function Logo({
@@ -34,7 +34,7 @@ export function Logo({
   const dims = sizeMap[size];
   const h = height ?? dims.height;
   const w = Math.round(h * 2.45);
-  const showContainer = container ?? dims.container ?? false;
+  const showContainer = container ?? false;
 
   const image = (
     <Image
@@ -57,8 +57,15 @@ export function Logo({
   );
 
   if (showContainer) {
+    // Transparent on light backgrounds; white plate only when the theme is dark
+    // (or when a caller explicitly passes a background, e.g. dark-only portals).
     return (
-      <div className={cn("bg-white rounded-lg p-2 shadow-sm", containerClassName)}>
+      <div
+        className={cn(
+          "rounded-lg transition-colors dark:bg-white dark:p-2 dark:shadow-sm",
+          containerClassName
+        )}
+      >
         {logo}
       </div>
     );

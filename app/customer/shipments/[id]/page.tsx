@@ -73,7 +73,7 @@ export default function CustomerShipmentDetail() {
             <button onClick={() => router.push('/customer/shipments')} className="text-gray-400 hover:text-white">
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <Logo size="xs" priority container containerClassName="bg-white" />
+            <Logo size="xs" priority container containerClassName="bg-white p-2" />
           </div>
           <span className="text-sm font-medium text-white">{data.houseAWBNumber}</span>
         </div>
