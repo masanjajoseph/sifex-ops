@@ -25,7 +25,7 @@ export function LoginHero() {
       animate="visible"
       className="max-w-lg space-y-5"
     >
-      <motion.div variants={itemVariants}>
+      <motion.div variants={itemVariants} className="w-fit">
         <Logo size="lg" priority container />
       </motion.div>
 
