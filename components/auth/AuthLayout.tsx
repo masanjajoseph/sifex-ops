@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import Image from "next/image";
 import { Logo } from "@/components/ui/Logo";
 import { LoginHero } from "./LoginHero";
 import { AuthCard } from "./AuthCard";
@@ -12,48 +13,20 @@ export function AuthLayout({ children }: AuthLayoutProps) {
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-background">
       {/* Left Panel — Enterprise Branding & Operations */}
-      <div className="hidden lg:flex lg:w-[55%] flex-col bg-gradient-to-br from-gray-950 via-gray-900 to-black relative overflow-hidden">
-        {/* Grid background pattern */}
-        <div
-          className="absolute inset-0 opacity-[0.06]"
-          style={{
-            backgroundImage: `
-              linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px)
-            `,
-            backgroundSize: "50px 50px",
-          }}
+      <div className="hidden lg:flex lg:w-[55%] relative overflow-hidden bg-gray-950">
+        {/* Full-bleed brand image */}
+        <Image
+          src="/login-hero.jpg"
+          alt="Sifex air cargo operations"
+          fill
+          priority
+          sizes="(min-width: 1024px) 55vw, 100vw"
+          className="object-cover"
         />
 
-        {/* Red gradient overlay - subtle brand accent */}
-        <div className="absolute top-0 right-0 w-96 h-96 bg-red-500/5 blur-3xl rounded-full" />
-        <div className="absolute bottom-0 left-0 w-80 h-80 bg-red-600/3 blur-3xl rounded-full" />
-
-        {/* Cargo route lines */}
-        <svg
-          className="absolute inset-0 w-full h-full opacity-[0.07]"
-          viewBox="0 0 800 600"
-          preserveAspectRatio="none"
-        >
-          <defs>
-            <linearGradient id="r1" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="white" />
-              <stop offset="50%" stopColor="#ef4444" stopOpacity="0.3" />
-              <stop offset="100%" stopColor="white" stopOpacity="0.1" />
-            </linearGradient>
-            <linearGradient id="r2" x1="100%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="white" stopOpacity="0.1" />
-              <stop offset="50%" stopColor="#ef4444" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="white" />
-            </linearGradient>
-          </defs>
-          <path d="M 0 300 Q 150 150 300 300 T 600 200 T 800 350" fill="none" stroke="url(#r1)" strokeWidth="2" />
-          <path d="M 0 400 Q 200 500 400 350 T 700 450 T 800 250" fill="none" stroke="url(#r2)" strokeWidth="1.5" />
-          <circle cx="300" cy="300" r="4" fill="#ef4444" opacity="0.5" />
-          <circle cx="600" cy="200" r="4" fill="white" opacity="0.4" />
-          <circle cx="400" cy="350" r="3" fill="#ef4444" opacity="0.4" />
-          <circle cx="700" cy="450" r="3" fill="white" opacity="0.3" />
-        </svg>
+        {/* Readability overlays */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/70 to-black/20" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-transparent to-black/20" />
 
         {/* Content */}
         <div className="relative z-10 flex-1 flex flex-col justify-between p-8 lg:p-12">
