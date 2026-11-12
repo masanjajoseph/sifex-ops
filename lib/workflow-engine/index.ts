@@ -406,6 +406,10 @@ export class WorkflowEngine {
         await this.moveToDelivery(tx, entityType, entityId, userId);
       }
 
+      if (entityType === "DeliveryTask") {
+        await this.syncShipmentDelivery(tx, entityId, toStatus);
+      }
+
       if (toStatus === "STORED" && (action === "ASSIGN_SHELF" || action === "ASSIGN_BIN")) {
         const locId = (context as any).metadata?.locationId as string;
         if (locId && entityType === "MasterAWB") {
@@ -866,6 +870,59 @@ export class WorkflowEngine {
           },
         });
       }
+    }
+  }
+
+  /**
+   * Mirror delivery-task progress onto the shipment so one shipment keeps one
+   * workflow: the HAWB carrying the task and its Master AWB follow the rider
+   * from out-for-delivery through delivery and final completion.
+   */
+  private async syncShipmentDelivery(
+    tx: any,
+    taskId: string,
+    taskStatus: string,
+  ): Promise<void> {
+    const task = await tx.deliveryTask.findUnique({
+      where: { id: taskId },
+      select: { id: true, houseAWBId: true, masterAWBId: true },
+    });
+    if (!task) return;
+
+    const deliveryStatusMap: Record<string, { workflowStatus: string; cargoStatus: CargoStatus; stage: WorkflowStage }> = {
+      ASSIGNED: { workflowStatus: "RIDER_ASSIGNED", cargoStatus: CargoStatus.AWAITING_DELIVERY, stage: WorkflowStage.DELIVERY },
+      STARTED: { workflowStatus: "OUT_FOR_DELIVERY", cargoStatus: CargoStatus.OUT_FOR_DELIVERY, stage: WorkflowStage.DELIVERY },
+      ARRIVED: { workflowStatus: "OUT_FOR_DELIVERY", cargoStatus: CargoStatus.OUT_FOR_DELIVERY, stage: WorkflowStage.DELIVERY },
+      DELIVERED: { workflowStatus: "DELIVERED", cargoStatus: CargoStatus.DELIVERED, stage: WorkflowStage.COMPLETED },
+      COMPLETED: { workflowStatus: "COMPLETED", cargoStatus: CargoStatus.POD_SIGNED, stage: WorkflowStage.COMPLETED },
+    };
+
+    const mapped = deliveryStatusMap[taskStatus];
+    if (!mapped) return;
+
+    if (task.houseAWBId) {
+      await tx.houseAWB.update({
+        where: { id: task.houseAWBId },
+        data: {
+          workflowStatus: mapped.workflowStatus,
+          cargoStatus: mapped.cargoStatus,
+          workflowStage: mapped.stage,
+          ...(taskStatus === "DELIVERED" || taskStatus === "COMPLETED"
+            ? { deliveredAt: new Date() }
+            : {}),
+        },
+      });
+    }
+
+    if (task.masterAWBId) {
+      await tx.masterAWB.update({
+        where: { id: task.masterAWBId },
+        data: {
+          workflowStatus: mapped.workflowStatus,
+          cargoStatus: mapped.cargoStatus,
+          workflowStage: mapped.stage,
+        },
+      });
     }
   }
 
