@@ -12,6 +12,13 @@ export async function register() {
   registerCargoEventHandlers();
   subscribeToEvents();
 
+  // Load TCRA key material when configured (used for signature verification /
+  // legacy signature auth). JWT bearer auth uses TCRA_API_TOKEN instead.
+  if (env.TCRA_PRIVATE_KEY && env.TCRA_PUBLIC_KEY) {
+    const { initTcraKeys } = await import("@/lib/tcra/signing");
+    initTcraKeys(env.TCRA_PRIVATE_KEY, env.TCRA_PUBLIC_KEY);
+  }
+
   if (env.NODE_ENV === "production" && env.OTEL_EXPORTER_OTLP_ENDPOINT) {
     const { diag, DiagConsoleLogger } = await import("@opentelemetry/api");
     diag.setLogger(new DiagConsoleLogger());

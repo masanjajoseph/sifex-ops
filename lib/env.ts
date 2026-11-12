@@ -60,6 +60,13 @@ const envSchema = z.object({
   // Monitoring
   PROMETHEUS_ENABLED: z.coerce.boolean().default(false),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
+
+  // TCRA integration
+  TCRA_API_URL: z.string().url().optional(),
+  TCRA_API_TOKEN: z.string().optional(),
+  TCRA_TEST_MODE: z.coerce.boolean().default(false),
+  TCRA_PRIVATE_KEY: z.string().optional(),
+  TCRA_PUBLIC_KEY: z.string().optional(),
 });
 
 type Env = z.infer<typeof envSchema>;

@@ -1,5 +1,5 @@
 export const TCRA_OPERATOR_CODE = "1004";
-export const TCRA_BASE_URL = process.env.TCRA_API_URL ?? "https://196.32.240.66:8000";
+export const TCRA_BASE_URL = process.env.TCRA_API_URL ?? "https://196.32.240.66";
 
 export enum TcraOperationCode {
   ACCEPTANCE = "OT01",
@@ -10,11 +10,12 @@ export enum TcraOperationCode {
   SNAPSHOT = "OT06",
 }
 
+// Values match the TCRA OpenAPI enum exactly (case-sensitive).
 export enum TcraStatusCode {
-  ACCEPTED = "accepted",
-  DISPATCHED = "dispatched",
-  DELIVERY_RECEIVED = "delivery_received",
-  DELIVERED = "delivered",
+  ACCEPTED = "Accepted",
+  DISPATCHED = "Dispatched",
+  DELIVERY_RECEIVED = "Delivery_received",
+  DELIVERED = "Delivered",
 }
 
 export enum TcraResponseCode {
@@ -27,6 +28,7 @@ export interface TcraMsgInfo {
   timestamp: string;
   msgId: string;
   operationCode: TcraOperationCode;
+  operationType?: TcraOperationCode;
   operatorCode: string;
 }
 

@@ -13,8 +13,9 @@ async function ensureCrypto() {
 }
 
 export function initTcraKeys(pvt: string, pub: string) {
-  privateKey = pvt;
-  publicKey = pub;
+  // Support PEM pasted into .env with literal \n escapes.
+  privateKey = pvt.includes("BEGIN") ? pvt.replace(/\\n/g, "\n") : pvt;
+  publicKey = pub.includes("BEGIN") ? pub.replace(/\\n/g, "\n") : pub;
 }
 
 export function getPrivateKey(): string {

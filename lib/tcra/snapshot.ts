@@ -33,6 +33,7 @@ export async function sendDailySnapshot(dateFrom: Date, dateTo: Date) {
     msgInfo: {
       timestamp,
       msgId,
+      operationType: TcraOperationCode.SNAPSHOT,
       operationCode: TcraOperationCode.SNAPSHOT,
       operatorCode: TCRA_OPERATOR_CODE,
     },
