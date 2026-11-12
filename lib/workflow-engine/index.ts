@@ -478,6 +478,19 @@ export class WorkflowEngine {
           workflowStage: chainWorkflowStage,
           departmentId,
         });
+
+        // A chained status may itself have an automatic follow-up
+        // (e.g. DISPATCHED → IN_TRANSIT → PRE_ARRIVAL).
+        await this.executeAutoTransitions(
+          tx,
+          entityType,
+          entityId,
+          transition.chainTo,
+          userId,
+          module,
+          departmentId,
+          branchId,
+        );
       }
 
       return {

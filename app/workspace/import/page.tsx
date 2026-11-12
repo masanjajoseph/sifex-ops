@@ -49,7 +49,7 @@ interface DashboardStats {
 
 const PIPELINE_COLUMNS = [
   { key: 'preArrival', label: 'Pre-Arrival', statuses: ['PRE_ARRIVAL'], icon: Plane, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-  { key: 'arriving', label: 'Arriving', statuses: ['TERMINAL_ARRIVED', 'MANIFEST_VERIFIED', 'MAWB_RECEIVED'], icon: Truck, color: 'text-cyan-400', bg: 'bg-cyan-500/10' },
+  { key: 'arriving', label: 'Arriving', statuses: ['IN_TRANSIT', 'TERMINAL_ARRIVED', 'MANIFEST_VERIFIED', 'MAWB_RECEIVED'], icon: Truck, color: 'text-cyan-400', bg: 'bg-cyan-500/10' },
   { key: 'inspection', label: 'In Inspection', statuses: ['RECEIVED', 'DOCUMENTS_VERIFIED', 'PIECES_VERIFIED', 'WEIGHT_VERIFIED', 'DAMAGE_INSPECTED'], icon: FileCheck, color: 'text-orange-400', bg: 'bg-orange-500/10' },
   { key: 'customs', label: 'Customs', statuses: ['CUSTOMS_SUBMITTED', 'CUSTOMS_ASSESSED', 'CUSTOMS_PAID', 'CUSTOMS_INSPECTION', 'CUSTOMS_HOLD'], icon: FileText, color: 'text-yellow-400', bg: 'bg-yellow-500/10' },
   { key: 'warehouse', label: 'Ready for Warehouse', statuses: ['CUSTOMS_CLEARED', 'WAREHOUSE_RECEIVING'], icon: Warehouse, color: 'text-purple-400', bg: 'bg-purple-500/10' },
