@@ -25,8 +25,8 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         />
 
         {/* Readability overlays */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/70 to-black/20" />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-transparent to-black/20" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/65 to-black/10" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-transparent to-black/20" />
 
         {/* Content */}
         <div className="relative z-10 flex-1 flex flex-col justify-between p-8 lg:p-12">

@@ -26,7 +26,7 @@ export function LoginHero() {
       className="max-w-lg space-y-5"
     >
       <motion.div variants={itemVariants} className="w-fit">
-        <Logo size="lg" priority container />
+        <Logo size="lg" priority className="drop-shadow-lg" />
       </motion.div>
 
       <motion.h1
