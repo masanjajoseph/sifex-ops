@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Warehouse, Search, RefreshCw, Package, Truck, CheckCircle,
-  Layers, Grid3X3, Printer, DollarSign, User, Loader2
+  Layers, Grid3X3, Printer, DollarSign, User, Loader2, Plus, Settings2, AlertCircle
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -55,12 +55,22 @@ export default function WarehousePage() {
   const [assignSaving, setAssignSaving] = useState(false);
   const [loadingLocations, setLoadingLocations] = useState(false);
 
+  const [manageOpen, setManageOpen] = useState(false);
+  const [manageZones, setManageZones] = useState<any[]>([]);
+  const [manageLoading, setManageLoading] = useState(false);
+  const [manageError, setManageError] = useState('');
+  const [newZone, setNewZone] = useState({ code: '', name: '', type: 'STORAGE', capacity: '' });
+  const [creatingZone, setCreatingZone] = useState(false);
+  const [shelfZoneId, setShelfZoneId] = useState('');
+  const [newShelf, setNewShelf] = useState({ code: '', maxWeight: '' });
+  const [creatingShelf, setCreatingShelf] = useState(false);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [shipRes, statsRes] = await Promise.all([
-        fetch('/api/master-awbs?limit=100&scope=warehouse'),
-        fetch('/api/dashboard/warehouse'),
+        fetch('/api/master-awbs?limit=100&scope=warehouse', { cache: 'no-store' }),
+        fetch('/api/dashboard/warehouse', { cache: 'no-store' }),
       ]);
       if (shipRes.ok) { const j = await shipRes.json(); setShipments(j.data || []); }
       if (statsRes.ok) { const j = await statsRes.json(); if (j.success) setStats(j.data); }
@@ -68,6 +78,13 @@ export default function WarehousePage() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Keep counters fresh when returning to the tab.
+  useEffect(() => {
+    const onFocus = () => fetchData();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [fetchData]);
 
   const filterBySearch = useCallback((items: any[]) =>
     items.filter(i => !search ||
@@ -130,11 +147,85 @@ export default function WarehousePage() {
     } catch {} finally { setAssignSaving(false); }
   };
 
+  const loadManageZones = async () => {
+    setManageLoading(true);
+    setManageError('');
+    try {
+      const res = await fetch('/api/warehouse/zones', { cache: 'no-store' });
+      const j = await res.json();
+      if (res.ok) setManageZones(j.data || []);
+      else setManageError(j.error || 'Failed to load storage zones');
+    } catch { setManageError('Failed to load storage zones'); }
+    finally { setManageLoading(false); }
+  };
+
+  const openManageStorage = () => {
+    setManageOpen(true);
+    setShelfZoneId('');
+    setNewShelf({ code: '', maxWeight: '' });
+    setNewZone({ code: '', name: '', type: 'STORAGE', capacity: '' });
+    loadManageZones();
+  };
+
+  const handleCreateZone = async () => {
+    if (!newZone.code.trim() || !newZone.name.trim() || creatingZone) return;
+    setCreatingZone(true);
+    setManageError('');
+    try {
+      const res = await fetch('/api/warehouse/zones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: newZone.code.trim().toUpperCase(),
+          name: newZone.name.trim(),
+          type: newZone.type,
+          capacity: newZone.capacity ? parseInt(newZone.capacity) : 0,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setManageError(j.error || 'Failed to create zone'); return; }
+      setNewZone({ code: '', name: '', type: 'STORAGE', capacity: '' });
+      await loadManageZones();
+    } catch { setManageError('Failed to create zone'); }
+    finally { setCreatingZone(false); }
+  };
+
+  const handleCreateShelf = async () => {
+    if (!shelfZoneId || !newShelf.code.trim() || creatingShelf) return;
+    setCreatingShelf(true);
+    setManageError('');
+    try {
+      const res = await fetch('/api/warehouse/locations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          zoneId: shelfZoneId,
+          code: newShelf.code.trim().toUpperCase(),
+          maxWeight: newShelf.maxWeight ? parseFloat(newShelf.maxWeight) : 0,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setManageError(j.error || 'Failed to create shelf'); return; }
+      setNewShelf({ code: '', maxWeight: '' });
+      await loadManageZones();
+    } catch { setManageError('Failed to create shelf'); }
+    finally { setCreatingShelf(false); }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader title="Warehouse Operations" description="Manage warehouse inventory, storage, and dispatch"
         breadcrumbs={[{ label: 'Workspace', href: '/workspace' }, { label: 'Warehouse' }]}
-        action={<Button variant="outline" size="sm" onClick={fetchData}><RefreshCw className="mr-1 h-4 w-4" /> Refresh</Button>} />
+        action={
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={openManageStorage}>
+              <Settings2 className="mr-1 h-4 w-4" /> Manage Storage
+            </Button>
+            <Button variant="outline" size="sm" onClick={fetchData}>
+              <RefreshCw className="mr-1 h-4 w-4" /> Refresh
+            </Button>
+          </div>
+        } />
 
       <div className="grid gap-4 sm:grid-cols-4">
         <StatCard label="Awaiting Storage" value={stats.awaitingStorage} icon={<Package className="h-5 w-5" />} />
@@ -277,6 +368,98 @@ export default function WarehousePage() {
           </DialogContent>
         </Dialog>
       ))}
+
+      <Dialog open={manageOpen} onOpenChange={setManageOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Manage Storage Zones & Shelves</DialogTitle>
+            <DialogDescription>
+              Create warehouse zones and storage locations. Shelves become selectable when assigning cargo.
+            </DialogDescription>
+          </DialogHeader>
+
+          {manageError && (
+            <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-400">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {manageError}
+            </div>
+          )}
+
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Create zone */}
+            <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+              <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-gray-900 dark:text-white">
+                <Warehouse className="h-3.5 w-3.5" /> New Zone
+              </h4>
+              <div className="space-y-2">
+                <Input value={newZone.code} onChange={e => setNewZone(z => ({ ...z, code: e.target.value }))} placeholder="Code (e.g. DAR-A)" className="h-8 text-sm" />
+                <Input value={newZone.name} onChange={e => setNewZone(z => ({ ...z, name: e.target.value }))} placeholder="Zone name" className="h-8 text-sm" />
+                <div className="flex gap-2">
+                  <select value={newZone.type} onChange={e => setNewZone(z => ({ ...z, type: e.target.value }))}
+                    className="h-8 flex-1 rounded-lg border border-gray-200 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                    {['STORAGE', 'COLD', 'HAZMAT', 'FRAGILE', 'OVERSIZE', 'QUARANTINE'].map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <Input type="number" value={newZone.capacity} onChange={e => setNewZone(z => ({ ...z, capacity: e.target.value }))} placeholder="Capacity" className="h-8 w-24 text-sm" />
+                </div>
+                <Button size="sm" className="w-full" onClick={handleCreateZone} disabled={creatingZone || !newZone.code.trim() || !newZone.name.trim()}>
+                  {creatingZone ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />}
+                  {creatingZone ? 'Creating...' : 'Create Zone'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Create shelf */}
+            <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+              <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-gray-900 dark:text-white">
+                <Layers className="h-3.5 w-3.5" /> New Shelf / Location
+              </h4>
+              <div className="space-y-2">
+                <select value={shelfZoneId} onChange={e => setShelfZoneId(e.target.value)}
+                  className="h-8 w-full rounded-lg border border-gray-200 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                  <option value="">Select zone...</option>
+                  {manageZones.map((z: any) => <option key={z.id} value={z.id}>{z.code} — {z.name}</option>)}
+                </select>
+                <Input value={newShelf.code} onChange={e => setNewShelf(s => ({ ...s, code: e.target.value }))} placeholder="Shelf code (e.g. A-03-01)" className="h-8 text-sm" />
+                <Input type="number" value={newShelf.maxWeight} onChange={e => setNewShelf(s => ({ ...s, maxWeight: e.target.value }))} placeholder="Max weight (kg)" className="h-8 text-sm" />
+                <Button size="sm" className="w-full" onClick={handleCreateShelf} disabled={creatingShelf || !shelfZoneId || !newShelf.code.trim()}>
+                  {creatingShelf ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />}
+                  {creatingShelf ? 'Creating...' : 'Create Shelf'}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+            {manageLoading ? (
+              <div className="flex items-center justify-center gap-2 py-6 text-sm text-gray-500">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading zones...
+              </div>
+            ) : manageZones.length === 0 ? (
+              <p className="py-4 text-center text-sm text-gray-500">No zones yet. Create the first zone above.</p>
+            ) : manageZones.map((z: any) => (
+              <div key={z.id} className="rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{z.code} — {z.name}</p>
+                    <p className="text-xs text-gray-500">{z.type} · capacity {z.capacity} · {z.locations?.length || 0} shelves</p>
+                  </div>
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShelfZoneId(z.id)}>
+                    <Plus className="mr-1 h-3 w-3" /> Add Shelf
+                  </Button>
+                </div>
+                {z.locations?.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {z.locations.map((l: any) => (
+                      <span key={l.id} className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                        {l.code}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

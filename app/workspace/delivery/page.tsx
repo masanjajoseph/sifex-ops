@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   Truck, RefreshCw, User, Play, Map, Phone,
   MessageSquare, FileText, Printer, Pen, CheckCircle, Calendar, Repeat,
-  XCircle, MapPin, Clock, Package, DollarSign
+  XCircle, MapPin, Clock, Package, DollarSign, Loader2, AlertCircle
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
@@ -14,6 +14,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/DataTable';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useWorkflowQueueSubscription } from '@/hooks/useRealtimeSubscription';
 
 interface DashboardStats {
@@ -67,13 +68,19 @@ export default function DeliveryPage() {
   });
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'waiting' | 'active' | 'completed'>('waiting');
+  const [riders, setRiders] = useState<any[]>([]);
+  const [ridersLoading, setRidersLoading] = useState(false);
+  const [assignTaskId, setAssignTaskId] = useState<string | null>(null);
+  const [selectedRiderId, setSelectedRiderId] = useState('');
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [assignError, setAssignError] = useState('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [taskRes, statsRes] = await Promise.all([
-        fetch('/api/delivery-tasks?limit=100'),
-        fetch('/api/dashboard/delivery'),
+        fetch('/api/delivery-tasks?limit=100', { cache: 'no-store' }),
+        fetch('/api/dashboard/delivery', { cache: 'no-store' }),
       ]);
       if (taskRes.ok) { const j = await taskRes.json(); setTasks(j.data || []); }
       if (statsRes.ok) { const j = await statsRes.json(); if (j.success) setStats(j.data); }
@@ -81,6 +88,13 @@ export default function DeliveryPage() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Refresh counters when the operator returns to the tab so stats never look stale.
+  useEffect(() => {
+    const onFocus = () => fetchData();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [fetchData]);
 
   useWorkflowQueueSubscription('delivery', fetchData);
 
@@ -99,22 +113,52 @@ export default function DeliveryPage() {
     } catch {}
   };
 
-  const handleAssignRider = async (taskId: string) => {
-    const riderId = prompt('Enter Rider ID:');
-    if (!riderId) return;
+  const fetchRiders = useCallback(async () => {
+    setRidersLoading(true);
     try {
-      await fetch('/api/workflow', {
+      const res = await fetch('/api/riders?isActive=true&limit=100', { cache: 'no-store' });
+      if (res.ok) { const j = await res.json(); setRiders(j.data || []); }
+    } catch {} finally { setRidersLoading(false); }
+  }, []);
+
+  const openAssignRider = (taskId: string) => {
+    setAssignTaskId(taskId);
+    setSelectedRiderId('');
+    setAssignError('');
+    fetchRiders();
+  };
+
+  const activeTaskCount = (riderId: string) =>
+    tasks.filter(t => t.assignedRiderId === riderId && ['ASSIGNED', 'STARTED', 'ARRIVED'].includes(t.status)).length;
+
+  const handleAssignRider = async () => {
+    if (!assignTaskId || !selectedRiderId || assignSaving) return;
+    setAssignSaving(true);
+    setAssignError('');
+    try {
+      const res = await fetch('/api/workflow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           entityType: 'DeliveryTask',
-          entityId: taskId,
+          entityId: assignTaskId,
           action: 'ASSIGN_RIDER',
-          metadata: { riderId },
+          metadata: { riderId: selectedRiderId },
         }),
       });
-      fetchData();
-    } catch {}
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setAssignError(j.error || j.message || 'Failed to assign rider');
+        return;
+      }
+      setAssignTaskId(null);
+      setSelectedRiderId('');
+      await fetchData();
+    } catch {
+      setAssignError('Failed to assign rider');
+    } finally {
+      setAssignSaving(false);
+    }
   };
 
   return (
@@ -163,7 +207,7 @@ export default function DeliveryPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 ml-3">
-                  <Button size="sm" variant="default" className="h-7 text-xs" onClick={() => handleAssignRider(d.id)}>
+                  <Button size="sm" variant="default" className="h-7 text-xs" onClick={() => openAssignRider(d.id)}>
                     <User className="mr-1 h-3 w-3" /> Assign Rider
                   </Button>
                   <Button size="sm" variant="default" className="h-7 text-xs" onClick={() => handleAction('ASSIGN_RIDER', d.id)}>
@@ -203,7 +247,7 @@ export default function DeliveryPage() {
                       <Button size="sm" variant="default" className="h-7 text-xs" onClick={() => handleAction('START_DELIVERY', d.id)}>
                         <Play className="mr-1 h-3 w-3" /> Start
                       </Button>
-                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAssignRider(d.id)}>
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openAssignRider(d.id)}>
                         <Repeat className="mr-1 h-3 w-3" /> Change Rider
                       </Button>
                     </>
@@ -249,6 +293,84 @@ export default function DeliveryPage() {
           { header: 'Delivered', accessorKey: 'deliveredAt' as const, cell: (i: any) => i.getValue() ? new Date(i.getValue()).toLocaleDateString() : '-' },
         ]} data={completed} pageSize={15} />
       )}
+
+      <Dialog open={!!assignTaskId} onOpenChange={(v) => { if (!v && !assignSaving) { setAssignTaskId(null); setSelectedRiderId(''); setAssignError(''); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign Rider</DialogTitle>
+            <DialogDescription>
+              Choose an active rider for this delivery task. Active workload is shown next to each rider.
+            </DialogDescription>
+          </DialogHeader>
+
+          {assignError && (
+            <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-400">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {assignError}
+            </div>
+          )}
+
+          {ridersLoading ? (
+            <div className="flex items-center justify-center gap-2 py-6 text-sm text-gray-500">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading riders...
+            </div>
+          ) : riders.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-600">
+              No active riders found. Create a rider from HR / Users first.
+            </div>
+          ) : (
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+              {riders.map((r: any) => {
+                const name = r.user ? `${r.user.firstName} ${r.user.lastName}` : 'Unnamed rider';
+                const active = activeTaskCount(r.id);
+                const checked = selectedRiderId === r.id;
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => setSelectedRiderId(r.id)}
+                    className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                      checked
+                        ? 'border-[#d00020] bg-red-50 dark:border-red-500 dark:bg-red-900/20'
+                        : 'border-gray-200 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800/60'
+                    }`}
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300">
+                      <Truck className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{name}</p>
+                      <p className="truncate text-xs text-gray-500">
+                        {r.vehicleType}{r.vehicleReg ? ` · ${r.vehicleReg}` : ''}
+                        {r.phone || r.user?.phone ? ` · ${r.phone || r.user?.phone}` : ''}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      active > 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                    }`}>
+                      {active} active
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" disabled={assignSaving} onClick={() => { setAssignTaskId(null); setSelectedRiderId(''); setAssignError(''); }}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="bg-[#d00020] text-white hover:bg-[#d00020]/90"
+              onClick={handleAssignRider}
+              disabled={!selectedRiderId || assignSaving}
+            >
+              {assignSaving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <User className="mr-1 h-3 w-3" />}
+              {assignSaving ? 'Assigning...' : 'Assign Rider'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

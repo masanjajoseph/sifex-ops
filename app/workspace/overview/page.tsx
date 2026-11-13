@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  Package, Plane, Warehouse, AlertTriangle, Scan, TrendingUp, DollarSign, Clock, MapPin, Activity,
+  Package, Plane, Warehouse, AlertTriangle, Scan, TrendingUp, DollarSign, Clock, MapPin, Activity, RefreshCw,
 } from 'lucide-react';
 import Link from 'next/link';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { Button } from '@/components/ui/button';
+import { useDashboardSubscription } from '@/hooks/useRealtimeSubscription';
 
 interface DashboardData {
   kpi: {
@@ -58,20 +60,27 @@ export default function OverviewPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchDashboard = async () => {
-      try {
-        const res = await fetch('/api/dashboard');
-        if (res.ok) {
-          const json = await res.json();
-          setData(json.data);
-        }
-      } catch {} finally {
-        setLoading(false);
+  const fetchDashboard = useCallback(async () => {
+    try {
+      const res = await fetch('/api/dashboard', { cache: 'no-store' });
+      if (res.ok) {
+        const json = await res.json();
+        setData(json.data);
       }
-    };
-    fetchDashboard();
+    } catch {} finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
+
+  useDashboardSubscription(fetchDashboard);
+
+  useEffect(() => {
+    const onFocus = () => fetchDashboard();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [fetchDashboard]);
 
   const formatCurrency = (val: number) => {
     if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}M`;
@@ -102,6 +111,11 @@ export default function OverviewPage() {
       <PageHeader
         title="Operational Overview"
         description="Enterprise statistics — real-time cargo operations at a glance"
+        action={
+          <Button variant="outline" size="sm" onClick={fetchDashboard}>
+            <RefreshCw className="mr-1 h-4 w-4" /> Refresh
+          </Button>
+        }
       />
 
       {loading ? (

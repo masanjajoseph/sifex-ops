@@ -49,13 +49,38 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
   const body = await req.json();
 
-  if (!body.stationId || !body.code || !body.name) {
-    return apiError(new Error("stationId, code, and name are required"), 400);
+  // Resolve the station server-side so the UI does not need to know it.
+  let stationId: string | null = body.stationId || null;
+  if (!stationId) {
+    const userStations = session.user.stations as string[] | undefined;
+    stationId = userStations && userStations.length > 0 ? userStations[0] : null;
+  }
+  if (!stationId) {
+    const firstZone = await prisma.warehouseZone.findFirst({
+      where: { deletedAt: null },
+      select: { stationId: true },
+    });
+    stationId = firstZone?.stationId ?? null;
+  }
+  if (!stationId) {
+    const firstStation = await prisma.station.findFirst({
+      where: { deletedAt: null },
+      select: { id: true },
+    });
+    stationId = firstStation?.id ?? null;
+  }
+
+  if (!stationId) {
+    return apiError(new Error("Unable to resolve a station for this user"), 400);
+  }
+
+  if (!body.code || !body.name) {
+    return apiError(new Error("code and name are required"), 400);
   }
 
   const zone = await prisma.warehouseZone.create({
     data: {
-      stationId: body.stationId,
+      stationId,
       code: body.code,
       name: body.name,
       type: body.type || "STORAGE",

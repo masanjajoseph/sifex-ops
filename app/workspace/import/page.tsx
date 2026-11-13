@@ -86,6 +86,14 @@ export default function ImportPage() {
   const [reportDescription, setReportDescription] = useState('');
   const [reportPieces, setReportPieces] = useState('');
   const [reportSaving, setReportSaving] = useState(false);
+  const [verifyEntity, setVerifyEntity] = useState<ImportItem | null>(null);
+  const [verifyPieces, setVerifyPieces] = useState('');
+  const [verifyWeight, setVerifyWeight] = useState('');
+  const [verifyNotes, setVerifyNotes] = useState('');
+  const [completeInspection, setCompleteInspection] = useState(true);
+  const [verifyRunning, setVerifyRunning] = useState(false);
+  const [verifyError, setVerifyError] = useState('');
+  const [verifyProgress, setVerifyProgress] = useState('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -94,8 +102,8 @@ export default function ImportPage() {
       if (selectedStatus) params.set('status', selectedStatus);
       if (search) params.set('search', search);
       const [dataRes, statsRes] = await Promise.all([
-        fetch(`/api/master-awbs?${params}`),
-        fetch('/api/dashboard/import'),
+        fetch(`/api/master-awbs?${params}`, { cache: 'no-store' }),
+        fetch('/api/dashboard/import', { cache: 'no-store' }),
       ]);
       if (dataRes.ok) { const j = await dataRes.json(); setData(j.data || []); }
       if (statsRes.ok) { const j = await statsRes.json(); if (j.success) setStats(j.data); }
@@ -105,6 +113,13 @@ export default function ImportPage() {
   }, [search, selectedStatus]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Refresh counters when the operator returns to the tab.
+  useEffect(() => {
+    const onFocus = () => fetchData();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [fetchData]);
 
   useWorkflowQueueSubscription('import', fetchData);
 
@@ -130,8 +145,11 @@ export default function ImportPage() {
           entityType: 'MasterAWB',
           entityId: reportEntity.id,
           action: reportEntity.type === 'damage' ? 'REPORT_DAMAGE' : 'REPORT_MISSING',
-          notes: reportDescription,
-          pieces: reportPieces ? parseInt(reportPieces) : undefined,
+          metadata: {
+            notes: reportDescription,
+            pieces: reportPieces ? parseInt(reportPieces) : undefined,
+            reportType: reportEntity.type,
+          },
         }),
       });
       setReportEntity(null);
@@ -140,6 +158,98 @@ export default function ImportPage() {
       fetchData();
     } catch {} finally {
       setReportSaving(false);
+    }
+  };
+
+  /**
+   * The verification sub-workflow can be entered from RECEIVED (docs or pieces
+   * first), DOCUMENTS_VERIFIED, or PIECES_VERIFIED. Return the transitions that
+   * are still pending so the panel can run them in a single click.
+   */
+  const pendingVerificationSteps = (status: string): { action: string; label: string }[] => {
+    switch (status) {
+      case 'RECEIVED':
+        return [
+          { action: 'VERIFY_DOCUMENTS', label: 'Documents verified' },
+          { action: 'VERIFY_PIECES', label: 'Pieces counted' },
+          { action: 'VERIFY_WEIGHT', label: 'Weight verified' },
+        ];
+      case 'DOCUMENTS_VERIFIED':
+        return [
+          { action: 'VERIFY_PIECES', label: 'Pieces counted' },
+          { action: 'VERIFY_WEIGHT', label: 'Weight verified' },
+        ];
+      case 'PIECES_VERIFIED':
+        return [
+          { action: 'VERIFY_DOCUMENTS', label: 'Documents verified' },
+          { action: 'VERIFY_WEIGHT', label: 'Weight verified' },
+        ];
+      default:
+        return [];
+    }
+  };
+
+  const openVerify = (item: ImportItem) => {
+    setVerifyEntity(item);
+    setVerifyPieces(String(item.awbPieces ?? ''));
+    setVerifyWeight(String(item.awbWeight ?? ''));
+    setVerifyNotes('');
+    setCompleteInspection(true);
+    setVerifyError('');
+    setVerifyProgress('');
+  };
+
+  const closeVerify = () => {
+    if (verifyRunning) return;
+    setVerifyEntity(null);
+    setVerifyError('');
+    setVerifyProgress('');
+  };
+
+  const handleVerifySubmit = async () => {
+    if (!verifyEntity || verifyRunning) return;
+    const steps = pendingVerificationSteps(verifyEntity.workflowStatus);
+    if (steps.length === 0) {
+      setVerifyError('Verification is already complete for this shipment.');
+      return;
+    }
+
+    const runSteps = completeInspection
+      ? [...steps, { action: 'COMPLETE_INSPECTION', label: 'Inspection completed' }]
+      : steps;
+
+    setVerifyRunning(true);
+    setVerifyError('');
+    try {
+      for (const step of runSteps) {
+        setVerifyProgress(step.label);
+        const res = await fetch('/api/workflow', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            entityType: 'MasterAWB',
+            entityId: verifyEntity.id,
+            action: step.action,
+            metadata: {
+              verifiedPieces: verifyPieces ? parseInt(verifyPieces) : undefined,
+              verifiedWeight: verifyWeight ? parseFloat(verifyWeight) : undefined,
+              notes: verifyNotes || undefined,
+            },
+          }),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          setVerifyError(`Could not complete "${step.label}": ${j.error || 'workflow rejected the transition'}`);
+          return;
+        }
+      }
+      setVerifyEntity(null);
+      setVerifyProgress('');
+      await fetchData();
+    } catch {
+      setVerifyError('Verification failed. Please try again.');
+    } finally {
+      setVerifyRunning(false);
     }
   };
 
@@ -179,19 +289,9 @@ export default function ImportPage() {
     );
     if (s === 'RECEIVED' || s === 'DOCUMENTS_VERIFIED' || s === 'PIECES_VERIFIED' || s === 'WEIGHT_VERIFIED' || s === 'DAMAGE_INSPECTED') return (
       <div className="flex gap-1 flex-wrap">
-        {(s === 'RECEIVED' || s === 'PIECES_VERIFIED') && (
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAction('VERIFY_DOCUMENTS', item.id)}>
-            <FileCheck className="mr-1 h-3 w-3" /> Docs
-          </Button>
-        )}
-        {(s === 'RECEIVED' || s === 'DOCUMENTS_VERIFIED') && (
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAction('VERIFY_PIECES', item.id)}>
-            <Package className="mr-1 h-3 w-3" /> Pieces
-          </Button>
-        )}
-        {(s === 'PIECES_VERIFIED' || s === 'DOCUMENTS_VERIFIED') && (
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAction('VERIFY_WEIGHT', item.id)}>
-            <Clock className="mr-1 h-3 w-3" /> Weight
+        {['RECEIVED', 'DOCUMENTS_VERIFIED', 'PIECES_VERIFIED'].includes(s) && (
+          <Button size="sm" variant="default" className="h-7 text-xs" onClick={() => openVerify(item)}>
+            <FileCheck className="mr-1 h-3 w-3" /> Verify Cargo
           </Button>
         )}
         {s === 'WEIGHT_VERIFIED' && (
@@ -428,6 +528,96 @@ export default function ImportPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {verifyEntity && (
+        <Dialog open={!!verifyEntity} onOpenChange={(v) => { if (!v) closeVerify(); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Verify Cargo</DialogTitle>
+              <DialogDescription>
+                {verifyEntity.awbNumber} — confirm documents, pieces, and weight in one step. Each check is recorded on the shipment timeline and audit log.
+              </DialogDescription>
+            </DialogHeader>
+
+            {verifyError && (
+              <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-400">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> <span>{verifyError}</span>
+              </div>
+            )}
+
+            <div className="rounded-lg bg-gray-50 px-3 py-2 text-xs dark:bg-gray-800/60">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Declared pieces</span>
+                <span className="font-semibold text-gray-900 dark:text-white">{verifyEntity.awbPieces}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-gray-500">Declared weight</span>
+                <span className="font-semibold text-gray-900 dark:text-white">{verifyEntity.awbWeight} kg</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              {pendingVerificationSteps(verifyEntity.workflowStatus).map((step, idx) => (
+                <div key={step.action} className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                  <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${
+                    verifyRunning && verifyProgress === step.label
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
+                      : 'bg-gray-100 text-gray-500 dark:bg-gray-800'
+                  }`}>
+                    {idx + 1}
+                  </span>
+                  {step.label}
+                  {verifyRunning && verifyProgress === step.label && <Loader2 className="h-3 w-3 animate-spin text-blue-500" />}
+                </div>
+              ))}
+              {completeInspection && (
+                <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-[10px] font-bold text-gray-500 dark:bg-gray-800">
+                    {pendingVerificationSteps(verifyEntity.workflowStatus).length + 1}
+                  </span>
+                  Inspection completed (ready for customs)
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Counted Pieces</label>
+                <Input type="number" min="0" value={verifyPieces} onChange={e => setVerifyPieces(e.target.value)} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Measured Weight (kg)</label>
+                <Input type="number" min="0" step="0.01" value={verifyWeight} onChange={e => setVerifyWeight(e.target.value)} />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Notes (optional)</label>
+              <textarea
+                value={verifyNotes}
+                onChange={e => setVerifyNotes(e.target.value)}
+                rows={2}
+                className="flex w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                placeholder="Discrepancies, packaging condition, etc."
+              />
+            </div>
+
+            <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+              <input type="checkbox" checked={completeInspection} onChange={e => setCompleteInspection(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-[#d00020]" />
+              Mark inspection complete (proceed to customs)
+            </label>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" size="sm" onClick={closeVerify} disabled={verifyRunning}>Cancel</Button>
+              <Button size="sm" className="bg-[#d00020] text-white hover:bg-[#d00020]/90" onClick={handleVerifySubmit} disabled={verifyRunning}>
+                {verifyRunning ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <CheckCircle className="mr-1 h-3 w-3" />}
+                {verifyRunning ? 'Verifying...' : 'Run Verification'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {reportEntity && (isMobile ? (
