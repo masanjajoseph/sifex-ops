@@ -42,7 +42,10 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     return apiError(new Error("Unauthorized"), 401);
   }
 
-  if (!hasPermission(session, "delivery:rider:create")) {
+  if (
+    !hasPermission(session, "delivery.create") &&
+    !hasPermission(session, "delivery:rider:create")
+  ) {
     return apiError(new Error("Forbidden"), 403);
   }
 

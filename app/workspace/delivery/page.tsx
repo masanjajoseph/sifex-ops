@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   Truck, RefreshCw, User, Play, Map, Phone,
   MessageSquare, FileText, Printer, Pen, CheckCircle, Calendar, Repeat,
-  XCircle, MapPin, Clock, Package, DollarSign, Loader2, AlertCircle
+  XCircle, MapPin, Clock, Package, DollarSign, Loader2, AlertCircle, Plus
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
@@ -74,6 +74,12 @@ export default function DeliveryPage() {
   const [selectedRiderId, setSelectedRiderId] = useState('');
   const [assignSaving, setAssignSaving] = useState(false);
   const [assignError, setAssignError] = useState('');
+  const [manageRidersOpen, setManageRidersOpen] = useState(false);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [newRider, setNewRider] = useState({ userId: '', vehicleType: 'BIKE', vehicleReg: '', phone: '' });
+  const [creatingRider, setCreatingRider] = useState(false);
+  const [riderError, setRiderError] = useState('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -161,11 +167,74 @@ export default function DeliveryPage() {
     }
   };
 
+  const fetchUsers = async () => {
+    setUsersLoading(true);
+    try {
+      const res = await fetch('/api/users?limit=100&status=ACTIVE', { cache: 'no-store' });
+      if (res.ok) {
+        const j = await res.json();
+        setAllUsers(j.users || []);
+      }
+    } catch {} finally { setUsersLoading(false); }
+  };
+
+  const openManageRiders = () => {
+    setManageRidersOpen(true);
+    setRiderError('');
+    setNewRider({ userId: '', vehicleType: 'BIKE', vehicleReg: '', phone: '' });
+    fetchRiders();
+    fetchUsers();
+  };
+
+  const handleCreateRider = async () => {
+    if (!newRider.userId || creatingRider) return;
+    setCreatingRider(true);
+    setRiderError('');
+    try {
+      const res = await fetch('/api/riders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: newRider.userId,
+          vehicleType: newRider.vehicleType,
+          vehicleReg: newRider.vehicleReg || undefined,
+          phone: newRider.phone || undefined,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setRiderError(j.error || j.message || 'Failed to create rider');
+        return;
+      }
+      setNewRider({ userId: '', vehicleType: 'BIKE', vehicleReg: '', phone: '' });
+      await fetchRiders();
+      await fetchData();
+    } catch {
+      setRiderError('Failed to create rider');
+    } finally {
+      setCreatingRider(false);
+    }
+  };
+
+  const availableUsers = useMemo(() => {
+    const riderUserIds = new Set(riders.map((r: any) => r.userId));
+    return allUsers.filter((u: any) => !riderUserIds.has(u.id));
+  }, [allUsers, riders]);
+
   return (
     <div className="space-y-6">
       <PageHeader title="Delivery Task Management" description="Manage delivery tasks, rider dispatch, and last-mile delivery"
         breadcrumbs={[{ label: 'Workspace', href: '/workspace' }, { label: 'Delivery' }]}
-        action={<Button variant="outline" size="sm" onClick={fetchData}><RefreshCw className="mr-1 h-4 w-4" /> Refresh</Button>} />
+        action={
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={openManageRiders}>
+              <User className="mr-1 h-4 w-4" /> Manage Riders
+            </Button>
+            <Button variant="outline" size="sm" onClick={fetchData}>
+              <RefreshCw className="mr-1 h-4 w-4" /> Refresh
+            </Button>
+          </div>
+        } />
 
       <div className="grid gap-4 sm:grid-cols-6">
         <StatCard label="Waiting Assignment" value={stats.waitingAssignment} icon={<Clock className="h-5 w-5" />} />
@@ -368,6 +437,80 @@ export default function DeliveryPage() {
               {assignSaving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <User className="mr-1 h-3 w-3" />}
               {assignSaving ? 'Assigning...' : 'Assign Rider'}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={manageRidersOpen} onOpenChange={setManageRidersOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Riders</DialogTitle>
+            <DialogDescription>
+              Riders are users with a rider profile. Add an existing active user as a rider, then select them when dispatching.
+            </DialogDescription>
+          </DialogHeader>
+
+          {riderError && (
+            <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-400">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {riderError}
+            </div>
+          )}
+
+          <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
+            {riders.length === 0 ? (
+              <p className="py-3 text-center text-sm text-gray-500">No riders yet. Add the first rider below.</p>
+            ) : riders.map((r: any) => {
+              const name = r.user ? `${r.user.firstName} ${r.user.lastName}` : 'Unnamed rider';
+              return (
+                <div key={r.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{name}</p>
+                    <p className="text-xs text-gray-500">
+                      {r.vehicleType}{r.vehicleReg ? ` · ${r.vehicleReg}` : ''}{r.phone ? ` · ${r.phone}` : ''}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                    {activeTaskCount(r.id)} active
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+            <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-gray-900 dark:text-white">
+              <Plus className="h-3.5 w-3.5" /> Add Rider
+            </h4>
+            <div className="space-y-2">
+              <select
+                value={newRider.userId}
+                onChange={e => {
+                  const u = availableUsers.find((x: any) => x.id === e.target.value);
+                  setNewRider(r => ({ ...r, userId: e.target.value, phone: u?.phone || r.phone }));
+                }}
+                disabled={usersLoading}
+                className="h-8 w-full rounded-lg border border-gray-200 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+              >
+                <option value="">{usersLoading ? 'Loading users...' : 'Select user...'}</option>
+                {availableUsers.map((u: any) => (
+                  <option key={u.id} value={u.id}>{u.firstName} {u.lastName} — {u.email}</option>
+                ))}
+              </select>
+              <div className="flex gap-2">
+                <select value={newRider.vehicleType} onChange={e => setNewRider(r => ({ ...r, vehicleType: e.target.value }))}
+                  className="h-8 w-28 rounded-lg border border-gray-200 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                  {['BIKE', 'MOTORCYCLE', 'VAN', 'TRUCK', 'CAR'].map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <input value={newRider.vehicleReg} onChange={e => setNewRider(r => ({ ...r, vehicleReg: e.target.value }))}
+                  placeholder="Vehicle reg" className="h-8 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
+              </div>
+              <input value={newRider.phone} onChange={e => setNewRider(r => ({ ...r, phone: e.target.value }))}
+                placeholder="Phone" className="h-8 w-full rounded-lg border border-gray-200 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
+              <Button size="sm" className="w-full" onClick={handleCreateRider} disabled={!newRider.userId || creatingRider}>
+                {creatingRider ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />}
+                {creatingRider ? 'Adding...' : 'Add Rider'}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
