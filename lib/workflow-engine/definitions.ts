@@ -23,7 +23,31 @@ const importSubStatuses = [
 export type ImportCustomsSubStatus = typeof importSubStatuses[number];
 
 const exportQuickActions: Record<string, QuickAction[]> = {
+  // Simplified flow -----------------------------------------------------------
+  [ExportWorkflowStatus.ACCEPTED]: [
+    { id: "assign-hawbs", label: "Assign HAWBs", action: "ASSIGN_HAWB", icon: "Link", variant: "primary", requiresPermission: "master-awb.update" },
+    { id: "edit-mawb", label: "Edit MAWB", action: "EDIT_SHIPMENT", icon: "Edit", variant: "outline", requiresPermission: "export.update" },
+  ],
+  [ExportWorkflowStatus.ASSIGNED]: [
+    { id: "generate-manifest-a", label: "Generate Manifest", action: "GENERATE_MANIFEST", icon: "FileText", variant: "primary", requiresPermission: "manifests.create" },
+    { id: "complete-loading-a", label: "Complete Loading", action: "COMPLETE_LOADING", icon: "Package", variant: "outline", requiresPermission: "master-awb.update" },
+  ],
+  [ExportWorkflowStatus.MANIFESTED]: [
+    { id: "complete-loading-m", label: "Complete Loading", action: "COMPLETE_LOADING", icon: "Package", variant: "primary", requiresPermission: "master-awb.update" },
+    { id: "depart-m", label: "Depart Flight", action: "DEPART_FLIGHT", icon: "Plane", variant: "primary", requiresPermission: "warehouse.dispatch", requiresConfirmation: true, confirmationMessage: "Confirm cargo departed on this flight?" },
+    { id: "print-manifest-m", label: "Print Manifest", action: "PRINT_MANIFEST", icon: "Printer", variant: "outline", requiresPermission: "master-awb.view" },
+  ],
+  [ExportWorkflowStatus.LOADED]: [
+    { id: "generate-manifest-l", label: "Generate Manifest", action: "GENERATE_MANIFEST", icon: "FileText", variant: "primary", requiresPermission: "manifests.create" },
+    { id: "depart-l", label: "Depart Flight", action: "DEPART_FLIGHT", icon: "Plane", variant: "primary", requiresPermission: "warehouse.dispatch", requiresConfirmation: true, confirmationMessage: "Confirm cargo departed on this flight?" },
+  ],
+  [ExportWorkflowStatus.DEPARTED]: [
+    { id: "mark-in-transit", label: "Mark In Transit", action: "MARK_IN_TRANSIT", icon: "Send", variant: "primary", requiresPermission: "warehouse.dispatch" },
+    { id: "view-timeline-d", label: "View Timeline", action: "VIEW_TIMELINE", icon: "Clock", variant: "ghost" },
+  ],
+  // Legacy statuses -----------------------------------------------------------
   [ExportWorkflowStatus.DRAFT]: [
+    { id: "accept-mawb", label: "Accept MAWB", action: "ACCEPT_MAWB", icon: "CheckCircle", variant: "primary", requiresPermission: "master-awb.update" },
     { id: "edit-shipment", label: "Edit Shipment", action: "EDIT_SHIPMENT", icon: "Edit", variant: "outline", requiresPermission: "export.update" },
     { id: "validate-shipment", label: "Validate Shipment", action: "VALIDATE_SHIPMENT", icon: "CheckCircle", variant: "primary", requiresPermission: "export.approve", requiresConfirmation: true, confirmationMessage: "Validate this shipment?" },
     { id: "upload-documents", label: "Upload Documents", action: "UPLOAD_DOCUMENTS", icon: "Upload", variant: "outline", requiresPermission: "export.update" },
@@ -42,9 +66,6 @@ const exportQuickActions: Record<string, QuickAction[]> = {
   [ExportWorkflowStatus.LOADING]: [
     { id: "loading-view", label: "Loading View", action: "LOADING_VIEW", icon: "Package", variant: "primary" },
     { id: "complete-loading", label: "Complete Loading", action: "COMPLETE_LOADING", icon: "CheckCircle", variant: "primary", requiresPermission: "master-awb.update", requiresConfirmation: true, confirmationMessage: "Confirm all HAWBs loaded onto MAWB?" },
-  ],
-  [ExportWorkflowStatus.LOADED]: [
-    { id: "assign-mawb-loaded", label: "Assign to MAWB", action: "ASSIGN_MAWB", icon: "Link", variant: "primary", requiresPermission: "master-awb.update" },
   ],
   [ExportWorkflowStatus.MAWB_ASSIGNED]: [
     { id: "generate-manifest", label: "Generate Manifest", action: "GENERATE_MANIFEST", icon: "FileText", variant: "primary", requiresPermission: "manifests.create" },
@@ -67,6 +88,21 @@ const exportQuickActions: Record<string, QuickAction[]> = {
 };
 
 const exportTransitions: WorkflowTransition[] = [
+  // Simplified flow -----------------------------------------------------------
+  { from: ExportWorkflowStatus.DRAFT, to: ExportWorkflowStatus.ACCEPTED, action: "ACCEPT_MAWB", requiredPermission: "master-awb.update", auditEvent: "export.mawb_accepted" },
+  { from: ExportWorkflowStatus.VALIDATED, to: ExportWorkflowStatus.ASSIGNED, action: "ASSIGN_HAWB", requiredPermission: "master-awb.update", auditEvent: "export.hawbs_assigned", hawbToStatus: "ASSIGNED" },
+  { from: ExportWorkflowStatus.HAWB_GENERATED, to: ExportWorkflowStatus.ASSIGNED, action: "ASSIGN_HAWB", requiredPermission: "master-awb.update", auditEvent: "export.hawbs_assigned", hawbToStatus: "ASSIGNED" },
+  { from: ExportWorkflowStatus.ACCEPTED, to: ExportWorkflowStatus.ASSIGNED, action: "ASSIGN_HAWB", requiredPermission: "master-awb.update", auditEvent: "export.hawbs_assigned", notificationEvent: "EXPORT_HAWBS_ASSIGNED", hawbToStatus: "ASSIGNED" },
+  // Legacy alias kept so older clients keep working.
+  { from: ExportWorkflowStatus.ACCEPTED, to: ExportWorkflowStatus.ASSIGNED, action: "ASSIGN_MAWB", requiredPermission: "master-awb.update", auditEvent: "export.hawbs_assigned", hawbToStatus: "ASSIGNED" },
+  { from: ExportWorkflowStatus.ASSIGNED, to: ExportWorkflowStatus.MANIFESTED, action: "GENERATE_MANIFEST", requiredPermission: "manifests.create", auditEvent: "export.manifest_created", hawbToStatus: "MANIFESTED" },
+  { from: ExportWorkflowStatus.ASSIGNED, to: ExportWorkflowStatus.LOADED, action: "COMPLETE_LOADING", requiredPermission: "master-awb.update", auditEvent: "export.loaded", hawbToStatus: "LOADED" },
+  { from: ExportWorkflowStatus.MANIFESTED, to: ExportWorkflowStatus.LOADED, action: "COMPLETE_LOADING", requiredPermission: "master-awb.update", auditEvent: "export.loaded", hawbToStatus: "LOADED" },
+  { from: ExportWorkflowStatus.LOADED, to: ExportWorkflowStatus.MANIFESTED, action: "GENERATE_MANIFEST", requiredPermission: "manifests.create", auditEvent: "export.manifest_created", hawbToStatus: "MANIFESTED" },
+  { from: ExportWorkflowStatus.MANIFESTED, to: ExportWorkflowStatus.DEPARTED, action: "DEPART_FLIGHT", requiredPermission: "warehouse.dispatch", auditEvent: "export.departed", notificationEvent: "EXPORT_DEPARTED", hawbToStatus: "DEPARTED" },
+  { from: ExportWorkflowStatus.LOADED, to: ExportWorkflowStatus.DEPARTED, action: "DEPART_FLIGHT", requiredPermission: "warehouse.dispatch", auditEvent: "export.departed", notificationEvent: "EXPORT_DEPARTED", hawbToStatus: "DEPARTED" },
+  { from: ExportWorkflowStatus.DEPARTED, to: ExportWorkflowStatus.IN_TRANSIT, action: "MARK_IN_TRANSIT", requiredPermission: "warehouse.dispatch", auditEvent: "export.in_transit", notificationEvent: "EXPORT_IN_TRANSIT", notificationTargetModule: WorkflowModule.IMPORT, notificationMessage: "Cargo is in transit. Prepare for arrival.", hawbToStatus: "IN_TRANSIT" },
+  // Legacy flow ---------------------------------------------------------------
   { from: ExportWorkflowStatus.DRAFT, to: ExportWorkflowStatus.VALIDATED, action: "VALIDATE_SHIPMENT", requiredPermission: "export.approve", auditEvent: "export.shipment_validated", notificationEvent: "EXPORT_SHIPMENT_VALIDATED" },
   { from: ExportWorkflowStatus.VALIDATED, to: ExportWorkflowStatus.HAWB_GENERATED, action: "GENERATE_HAWB", requiredPermission: "house-awb.create", auditEvent: "export.hawb_generated" },
   { from: ExportWorkflowStatus.HAWB_GENERATED, to: ExportWorkflowStatus.LOADING, action: "START_LOADING", requiredPermission: "master-awb.update", auditEvent: "export.loading_started", notificationEvent: "EXPORT_LOADING_STARTED" },
@@ -80,11 +116,30 @@ const exportTransitions: WorkflowTransition[] = [
 ];
 
 const importQuickActions: Record<string, QuickAction[]> = {
+  // Simplified flow -----------------------------------------------------------
   [ImportWorkflowStatus.PRE_ARRIVAL]: [
-    { id: "receive-manifest", label: "Receive Manifest", action: "RECEIVE_MANIFEST", icon: "FileText", variant: "primary", requiresPermission: "import.update" },
+    { id: "confirm-arrival", label: "Confirm Arrival", action: "CONFIRM_ARRIVAL", icon: "Plane", variant: "primary", requiresPermission: "warehouse.receive", requiresConfirmation: true, confirmationMessage: "Confirm this cargo has arrived at the terminal?" },
     { id: "view-flight-status", label: "View Flight", action: "VIEW_FLIGHT", icon: "Plane", variant: "ghost" },
     { id: "print-pre-alert", label: "Print Pre-Alert", action: "PRINT_PRE_ALERT", icon: "Printer", variant: "outline" },
   ],
+  [ImportWorkflowStatus.ARRIVED]: [
+    { id: "start-clearance", label: "Start Clearance", action: "START_CLEARANCE", icon: "FileText", variant: "primary", requiresPermission: "customs.update" },
+    { id: "print-arrival-notice", label: "Print Arrival Notice", action: "PRINT_ARRIVAL_NOTICE", icon: "Printer", variant: "outline" },
+  ],
+  [ImportWorkflowStatus.UNDER_CLEARANCE]: [
+    { id: "release-clearance", label: "Release Cargo", action: "RELEASE_CLEARANCE", icon: "CheckCircle", variant: "primary", requiresPermission: "customs.update", requiresConfirmation: true, confirmationMessage: "Confirm customs has released this cargo?" },
+    { id: "report-hold", label: "Report Hold", action: "REPORT_HOLD", icon: "XCircle", variant: "danger", requiresPermission: "customs.update" },
+  ],
+  [ImportWorkflowStatus.RELEASED]: [
+    { id: "receive-into-warehouse", label: "Receive Into Warehouse", action: "RECEIVE_INTO_WAREHOUSE", icon: "Warehouse", variant: "primary", requiresPermission: "warehouse.receive", requiresConfirmation: true, confirmationMessage: "Receive this cargo into the warehouse?" },
+  ],
+  [ImportWorkflowStatus.WAREHOUSE]: [
+    { id: "view-warehouse", label: "Open Warehouse", action: "VIEW_WAREHOUSE", icon: "Warehouse", variant: "outline" },
+  ],
+  [ImportWorkflowStatus.DELIVERY]: [
+    { id: "view-delivery", label: "Open Delivery", action: "VIEW_DELIVERY", icon: "Truck", variant: "outline" },
+  ],
+  // Legacy statuses -----------------------------------------------------------
   [ImportWorkflowStatus.TERMINAL_ARRIVED]: [
     { id: "verify-manifest", label: "Verify Manifest", action: "VERIFY_MANIFEST", icon: "FileCheck", variant: "primary", requiresPermission: "import.update" },
     { id: "report-discrepancy", label: "Report Discrepancy", action: "REPORT_DISCREPANCY", icon: "AlertTriangle", variant: "danger", requiresPermission: "import.update" },
@@ -155,6 +210,15 @@ const importTransitions: WorkflowTransition[] = [
   // Cross-module from Export
   { from: ExportWorkflowStatus.DISPATCHED, to: ImportWorkflowStatus.PRE_ARRIVAL, action: "MARK_PRE_ARRIVAL", requiredPermission: "system:auto", autoTrigger: true, auditEvent: "import.pre_arrival", notificationEvent: "IMPORT_PRE_ARRIVAL", notificationTargetModule: WorkflowModule.IMPORT, notificationMessage: "Flight dispatched. Prepare for arrival." },
   { from: ExportWorkflowStatus.IN_TRANSIT, to: ImportWorkflowStatus.PRE_ARRIVAL, action: "MARK_PRE_ARRIVAL", requiredPermission: "system:auto", autoTrigger: true, auditEvent: "import.pre_arrival", notificationEvent: "IMPORT_PRE_ARRIVAL" },
+
+  // Simplified flow -----------------------------------------------------------
+  { from: ImportWorkflowStatus.PRE_ARRIVAL, to: ImportWorkflowStatus.ARRIVED, action: "CONFIRM_ARRIVAL", requiredPermission: "warehouse.receive", auditEvent: "import.arrived", notificationEvent: "IMPORT_ARRIVED" },
+  { from: ImportWorkflowStatus.ARRIVED, to: ImportWorkflowStatus.UNDER_CLEARANCE, action: "START_CLEARANCE", requiredPermission: "customs.update", auditEvent: "import.clearance_started" },
+  { from: ImportWorkflowStatus.UNDER_CLEARANCE, to: ImportWorkflowStatus.RELEASED, action: "RELEASE_CLEARANCE", requiredPermission: "customs.update", auditEvent: "import.customs_released", notificationEvent: "IMPORT_CUSTOMS_CLEARED" },
+  { from: ImportWorkflowStatus.UNDER_CLEARANCE, to: ImportWorkflowStatus.CUSTOMS_HOLD, action: "REPORT_HOLD", requiredPermission: "customs.update", auditEvent: "import.customs_hold", notificationEvent: "IMPORT_CUSTOMS_HOLD", notificationTargetModule: WorkflowModule.IMPORT, notificationMessage: "Customs hold placed on shipment. Action required." },
+  { from: ImportWorkflowStatus.CUSTOMS_HOLD, to: ImportWorkflowStatus.RELEASED, action: "RESOLVE_HOLD", requiredPermission: "customs.update", auditEvent: "import.customs_hold_resolved", notificationEvent: "IMPORT_CUSTOMS_CLEARED" },
+  { from: ImportWorkflowStatus.RELEASED, to: ImportWorkflowStatus.WAREHOUSE, action: "RECEIVE_INTO_WAREHOUSE", requiredPermission: "warehouse.receive", auditEvent: "import.warehouse_received", notificationEvent: "IMPORT_TO_WAREHOUSE", notificationTargetModule: WorkflowModule.WAREHOUSE, notificationMessage: "Cargo received into warehouse. Charge and release HAWBs.", sideEffects: [{ type: "UPDATE_RELATED", target: "workflowStage", data: { stage: "WAREHOUSE" } }] },
+  { from: ImportWorkflowStatus.WAREHOUSE, to: ImportWorkflowStatus.DELIVERY, action: "SEND_TO_DELIVERY", requiredPermission: "delivery.assign", auditEvent: "import.delivery_started", notificationTargetModule: WorkflowModule.DELIVERY, notificationMessage: "Cargo charged and ready for delivery.", sideEffects: [{ type: "UPDATE_RELATED", target: "workflowStage", data: { stage: "DELIVERY" } }] },
 
   // Arrival flow
   { from: ImportWorkflowStatus.PRE_ARRIVAL, to: ImportWorkflowStatus.TERMINAL_ARRIVED, action: "CONFIRM_ARRIVAL", requiredPermission: "warehouse.receive", auditEvent: "import.arrived", notificationEvent: "IMPORT_ARRIVED" },
@@ -319,6 +383,14 @@ export const WORKFLOW_DEFINITIONS: Record<WorkflowModule, WorkflowDefinition> = 
 };
 
 export const MODULE_STATUS_MAP: Record<string, WorkflowModule> = {
+  ACCEPTED: WorkflowModule.EXPORT,
+  ASSIGNED: WorkflowModule.EXPORT,
+  DEPARTED: WorkflowModule.EXPORT,
+  ARRIVED: WorkflowModule.IMPORT,
+  UNDER_CLEARANCE: WorkflowModule.IMPORT,
+  RELEASED: WorkflowModule.IMPORT,
+  WAREHOUSE: WorkflowModule.WAREHOUSE,
+  DELIVERY: WorkflowModule.DELIVERY,
   DRAFT: WorkflowModule.EXPORT,
   VALIDATED: WorkflowModule.EXPORT,
   HAWB_GENERATED: WorkflowModule.EXPORT,
@@ -359,9 +431,7 @@ export const MODULE_STATUS_MAP: Record<string, WorkflowModule> = {
   DELIVERED: WorkflowModule.DELIVERY,
   COMPLETED: WorkflowModule.DELIVERY,
   WAITING_ASSIGNMENT: WorkflowModule.DELIVERY,
-  ASSIGNED: WorkflowModule.DELIVERY,
   STARTED: WorkflowModule.DELIVERY,
-  ARRIVED: WorkflowModule.DELIVERY,
   CANCELLED: WorkflowModule.DELIVERY,
 };
 

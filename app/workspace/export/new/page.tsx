@@ -53,6 +53,7 @@ const emptySr = (): SenderReceiver => ({ name: '', company: '', phone: '', addre
 
 export default function NewExportPage() {
   const router = useRouter();
+  const [mode, setMode] = useState<'mawb' | 'hawb'>('mawb');
   const [step, setStep] = useState(0);
   const [airlineId, setAirlineId] = useState('');
   const [flightNumber, setFlightNumber] = useState('');
@@ -73,6 +74,14 @@ export default function NewExportPage() {
   const [resumeDraft, setResumeDraft] = useState(false);
   const [saving, setSaving] = useState<'saving' | 'saved' | null>(null);
   const hasUserData = useRef(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') === 'hawb') {
+      setMode('hawb');
+      setStep(0);
+    }
+  }, []);
 
   useEffect(() => {
     fetch('/api/stations').then(r => r.ok && r.json()).then(j => setStations(j?.data || [])).catch(() => {});
@@ -135,7 +144,7 @@ export default function NewExportPage() {
     setResumeDraft(false);
   };
 
-  const steps = ['Flight Info', 'House AWBs', 'Review'];
+  const steps = mode === 'mawb' ? ['Flight Info'] : ['House AWB'];
 
   const updateSender = (id: string, field: keyof SenderReceiver, value: string) => {
     setHawbs(prev => prev.map(h => h.id === id ? { ...h, sender: { ...h.sender, [field]: value } } : h));
@@ -199,7 +208,6 @@ export default function NewExportPage() {
       return { ...h, parcels, chargeableWeight: Math.max(totalW, totalVw), freightAmount: h.freightRate * Math.max(totalW, totalVw) };
     }));
   };
-  const addHawb = () => { const h = createHawb(); setHawbs(prev => [...prev, h]); setExpandedHawb(h.id); };
   const removeHawb = (id: string) => {
     if (hawbs.length <= 1) return;
     setHawbs(prev => prev.filter(h => h.id !== id));
@@ -207,9 +215,8 @@ export default function NewExportPage() {
   };
 
   const canProceed = () => {
-    if (step === 0) return originStation && destinationStation && flightNumber && departureDate;
-    if (step === 1) return hawbs.some(h => h.sender.name && h.receiver.name && h.description && h.parcels.some(p => p.description && p.weight > 0));
-    return originStation && destinationStation && flightNumber && departureDate && hawbs.some(h => h.sender.name);
+    if (mode === 'mawb') return Boolean(originStation && destinationStation && flightNumber && departureDate);
+    return hawbs.some(h => h.sender.name && h.receiver.name && h.description && h.parcels.some(p => p.description && p.weight > 0));
   };
 
   const renderField = (label: string, value: string | number, onChange: (v: string) => void, opts?: { type?: string; placeholder?: string; required?: boolean; className?: string }) => (
@@ -221,7 +228,7 @@ export default function NewExportPage() {
     </div>
   );
 
-  const handleSubmit = async () => {
+  const handleCreateMawb = async () => {
     setSubmitting(true); setError('');
 
     if (!originStation || !destinationStation) {
@@ -231,7 +238,7 @@ export default function NewExportPage() {
     }
 
     try {
-      const mawbRes = await fetch('/api/master-awbs', {
+      const res = await fetch('/api/master-awbs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -244,94 +251,141 @@ export default function NewExportPage() {
           arrivalTime: undefined,
           senderName: 'Sifex Air Cargo',
           senderAddress: '',
-          shipmentType: hawbs.find(h => h.awbType)?.awbType || 'CAN_GUANGZHOU',
-          paymentMode: 'PP', currency: 'USD',
+          receiverName: 'Consolidated Cargo',
+          receiverAddress: '',
+          shipmentType: 'CAN_GUANGZHOU',
+          paymentMode: 'PP',
+          currency: 'USD',
         }),
       });
-      if (!mawbRes.ok) {
-        const errBody = await mawbRes.json().catch(() => null);
-        throw new Error(errBody?.error || `Master AWB creation failed (HTTP ${mawbRes.status})`);
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        throw new Error(errBody?.error || `Master AWB creation failed (HTTP ${res.status})`);
       }
-      const mawbData = await mawbRes.json();
-      const masterAWBId = mawbData.data?.id || mawbData.id;
 
-      for (const hawb of hawbs) {
-        if (!hawb.sender.name) continue;
-        const [shipperRes, receiverRes] = await Promise.all([
-          fetch('/api/customers', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: hawb.sender.name, code: `SHP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: 'COMPANY', phone: hawb.sender.phone, address: hawb.sender.address, city: hawb.sender.city, country: hawb.sender.country }),
-          }),
-          fetch('/api/customers', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: hawb.receiver.name, code: `REC-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: 'COMPANY', phone: hawb.receiver.phone, address: hawb.receiver.address, city: hawb.receiver.city, country: hawb.receiver.country }),
-          }),
-        ]);
-        if (!shipperRes.ok || !receiverRes.ok) throw new Error('Failed to create customers');
-        const [shipperData, receiverData] = await Promise.all([shipperRes.json(), receiverRes.json()]);
-        const shipperId = shipperData.data?.id || shipperData.id;
-        const receiverId = receiverData.data?.id || receiverData.id;
+      const data = await res.json();
+      clearDraft();
+      setSuccess(true);
+      setCreatedId(data.data?.id || data.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create Master AWB');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-        const totalVolume = hawb.parcels.reduce((s, p) => s + (p.length * p.width * p.height) * p.quantity, 0);
-        const volumeWeight = Math.round(totalVolume / 6000);
+  const handleCreateHawb = async () => {
+    setSubmitting(true); setError('');
+    const hawb = hawbs[0];
 
-        const hawbRes = await fetch('/api/house-awbs', {
+    if (!hawb.sender.name || !hawb.receiver.name) {
+      setError('Shipper and consignee names are required.');
+      setSubmitting(false);
+      return;
+    }
+    if (!hawb.description || !hawb.parcels.some(p => p.description && p.weight > 0)) {
+      setError('Add a cargo description and at least one parcel with weight.');
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      const [shipperRes, receiverRes] = await Promise.all([
+        fetch('/api/customers', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: hawb.sender.name, code: `SHP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: 'COMPANY', phone: hawb.sender.phone, address: hawb.sender.address, city: hawb.sender.city, country: hawb.sender.country }),
+        }),
+        fetch('/api/customers', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: hawb.receiver.name, code: `REC-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: 'COMPANY', phone: hawb.receiver.phone, address: hawb.receiver.address, city: hawb.receiver.city, country: hawb.receiver.country }),
+        }),
+      ]);
+      if (!shipperRes.ok || !receiverRes.ok) throw new Error('Failed to create shipper/consignee');
+      const [shipperData, receiverData] = await Promise.all([shipperRes.json(), receiverRes.json()]);
+      const shipperId = shipperData.data?.id || shipperData.id;
+      const receiverId = receiverData.data?.id || receiverData.id;
+
+      const totalVolume = hawb.parcels.reduce((s, p) => s + (p.length * p.width * p.height) * p.quantity, 0);
+      const volumeWeight = Math.round(totalVolume / 6000);
+
+      const hawbRes = await fetch('/api/house-awbs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          houseAWBNumber: `HAWB-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          shipperId, receiverId,
+          description: hawb.description,
+          pieces: hawb.parcels.reduce((s, p) => s + p.quantity, 0),
+          weight: hawb.parcels.reduce((s, p) => s + p.weight, 0),
+          volume: totalVolume,
+          volumeWeight,
+          chargeableWeight: hawb.chargeableWeight,
+          freight: hawb.freightAmount,
+          freightRate: hawb.freightRate,
+          insurance: Number(hawb.insurance) || 0,
+          currency: hawb.currency,
+          customsValue: Number(hawb.customsValue) || 0,
+          shipmentType: hawb.awbType || undefined,
+        }),
+      });
+      if (!hawbRes.ok) {
+        const errBody = await hawbRes.json().catch(() => null);
+        throw new Error(errBody?.error || `House AWB creation failed (HTTP ${hawbRes.status})`);
+      }
+      const hawbData = await hawbRes.json();
+      const houseAWBId = hawbData.data?.id || hawbData.id;
+
+      for (const parcel of hawb.parcels) {
+        if (!parcel.description) continue;
+        const parRes = await fetch('/api/parcels', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            houseAWBNumber: `HAWB-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            masterAWBId, shipperId, receiverId,
-            pieces: hawb.parcels.reduce((s, p) => s + p.quantity, 0),
-            weight: hawb.parcels.reduce((s, p) => s + p.weight, 0),
-            volume: totalVolume,
-            volumeWeight,
-            chargeableWeight: hawb.chargeableWeight,
-            freight: hawb.freightAmount, freightRate: hawb.freightRate,
-            insurance: Number(hawb.insurance) || 0,
-
-            currency: hawb.currency, customsValue: Number(hawb.customsValue) || 0,
-            shipmentType: hawb.awbType || undefined,
+            houseAWBId,
+            parcelTrackingNumber: `PK-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            barcode: `BAR-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            description: parcel.description, quantity: parcel.quantity,
+            actualWeight: parcel.weight, length: parcel.length, width: parcel.width, height: parcel.height,
+            packageType: 'CTN',
           }),
         });
-        if (!hawbRes.ok) {
-          const errBody = await hawbRes.json().catch(() => null);
-          throw new Error(errBody?.error || `House AWB creation failed (HTTP ${hawbRes.status})`);
-        }
-        const hawbData = await hawbRes.json();
-        const houseAWBId = hawbData.data?.id || hawbData.id;
-
-        for (const parcel of hawb.parcels) {
-          if (!parcel.description) continue;
-          const parRes = await fetch('/api/parcels', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              houseAWBId, parcelTrackingNumber: `PK-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              barcode: `BAR-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              description: parcel.description, quantity: parcel.quantity,
-              actualWeight: parcel.weight, length: parcel.length, width: parcel.width, height: parcel.height,
-              packageType: 'CTN',
-            }),
-          });
-          if (!parRes.ok) throw new Error('Failed to create parcel');
-        }
+        if (!parRes.ok) throw new Error('Failed to create parcel');
       }
 
       clearDraft();
       setSuccess(true);
-      setCreatedId(masterAWBId);
+      setCreatedId(houseAWBId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create shipment');
-    } finally { setSubmitting(false); }
+      setError(err instanceof Error ? err.message : 'Failed to create House AWB');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
+  const handleSubmit = mode === 'mawb' ? handleCreateMawb : handleCreateHawb;
+
   if (success) {
+    const isHawb = mode === 'hawb';
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <CheckCircle2 className="mb-4 h-16 w-16 text-green-500" />
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Export Created Successfully</h2>
-        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Master AWB has been created.</p>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+          {isHawb ? 'House AWB Created Successfully' : 'Master AWB Created Successfully'}
+        </h2>
+        <p className="mt-2 text-center text-sm text-gray-500 dark:text-gray-400">
+          {isHawb
+            ? 'The House AWB is ready to be assigned to a Master AWB from the export list.'
+            : 'The Master AWB is accepted. Assign House AWBs from the export list to continue.'}
+        </p>
         <div className="mt-6 flex gap-3">
-          <Button variant="outline" onClick={() => router.push('/workspace/export')}>Back to Exports</Button>
-          <Button onClick={() => router.push(`/workspace/master-awb/${createdId}`)}>View Shipment</Button>
+          <Button variant="outline" onClick={() => router.push(isHawb ? '/workspace/house-awb' : '/workspace/export')}>
+            {isHawb ? 'Back to House AWBs' : 'Back to Exports'}
+          </Button>
+          <Button onClick={() => {
+            if (isHawb) { window.location.href = '/workspace/export/new?mode=hawb'; return; }
+            router.push(`/workspace/master-awb/${createdId}`);
+          }}>
+            {isHawb ? 'Create Another' : 'View MAWB'}
+          </Button>
         </div>
       </div>
     );
@@ -340,15 +394,17 @@ export default function NewExportPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <PageHeader
-        title="New Export Shipment"
-        description="Create a new Master AWB with House AWBs under consolidation"
+        title={mode === 'hawb' ? 'New House AWB' : 'New Master AWB'}
+        description={mode === 'hawb'
+          ? 'Create a standalone House AWB, then bulk-assign it to a Master AWB.'
+          : 'Create the Master AWB and flight details. Assign House AWBs from the export list.'}
         breadcrumbs={[
           { label: 'Workspace', href: '/workspace' },
           { label: 'Export Operations', href: '/workspace/export' },
-          { label: 'New Export' },
+          { label: mode === 'hawb' ? 'New House AWB' : 'New Master AWB' },
         ]}
         action={
-          <Button variant="outline" size="sm" onClick={() => router.push('/workspace/export')}>
+          <Button variant="outline" size="sm" onClick={() => router.push(mode === 'hawb' ? '/workspace/house-awb' : '/workspace/export')}>
             Cancel
           </Button>
         }
@@ -410,7 +466,7 @@ export default function NewExportPage() {
         })}
       </div>
 
-      {step === 0 && (
+      {mode === 'mawb' && (
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
             <Plane className="h-4 w-4 text-blue-500" /> Flight & Route Information
@@ -464,18 +520,15 @@ export default function NewExportPage() {
         </div>
       )}
 
-      {step === 1 && (
+      {mode === 'hawb' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
-              <UserSquare2 className="h-4 w-4 text-blue-500" /> House Air Waybills
+              <UserSquare2 className="h-4 w-4 text-blue-500" /> House Air Waybill
             </h3>
-            <Button type="button" variant="outline" size="sm" onClick={addHawb}>
-              <Plus className="mr-1 h-3 w-3" /> Add HAWB
-            </Button>
           </div>
 
-          {hawbs.map((hawb) => (
+          {[hawbs[0]].map((hawb) => (
             <div key={hawb.id} className="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
               <div
                 onClick={() => setExpandedHawb(expandedHawb === hawb.id ? '' : hawb.id)}
@@ -768,7 +821,7 @@ export default function NewExportPage() {
           <Button type="button" onClick={() => setStep(step + 1)} disabled={!canProceed()}>Next</Button>
         ) : (
           <Button type="button" onClick={handleSubmit} disabled={submitting || !canProceed()}>
-            {submitting ? 'Creating...' : 'Create Export'}
+            {submitting ? 'Creating...' : mode === 'mawb' ? 'Create Master AWB' : 'Create House AWB'}
           </Button>
         )}
       </div>

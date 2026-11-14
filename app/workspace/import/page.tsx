@@ -48,20 +48,21 @@ interface DashboardStats {
 }
 
 const PIPELINE_COLUMNS = [
-  { key: 'preArrival', label: 'Pre-Arrival', statuses: ['PRE_ARRIVAL'], icon: Plane, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-  { key: 'arriving', label: 'Arriving', statuses: ['IN_TRANSIT', 'TERMINAL_ARRIVED', 'MANIFEST_VERIFIED', 'MAWB_RECEIVED'], icon: Truck, color: 'text-cyan-400', bg: 'bg-cyan-500/10' },
-  { key: 'inspection', label: 'In Inspection', statuses: ['RECEIVED', 'DOCUMENTS_VERIFIED', 'PIECES_VERIFIED', 'WEIGHT_VERIFIED', 'DAMAGE_INSPECTED'], icon: FileCheck, color: 'text-orange-400', bg: 'bg-orange-500/10' },
-  { key: 'customs', label: 'Customs', statuses: ['CUSTOMS_SUBMITTED', 'CUSTOMS_ASSESSED', 'CUSTOMS_PAID', 'CUSTOMS_INSPECTION', 'CUSTOMS_HOLD'], icon: FileText, color: 'text-yellow-400', bg: 'bg-yellow-500/10' },
-  { key: 'warehouse', label: 'Ready for Warehouse', statuses: ['CUSTOMS_CLEARED', 'WAREHOUSE_RECEIVING'], icon: Warehouse, color: 'text-purple-400', bg: 'bg-purple-500/10' },
-  { key: 'exception', label: 'Exceptions', statuses: ['EXCEPTION'], icon: AlertTriangle, color: 'text-red-400', bg: 'bg-red-500/10' },
+  { key: 'preArrival', label: 'Pre-Arrival', statuses: ['PRE_ARRIVAL', 'IN_TRANSIT', 'DISPATCHED'], icon: Plane, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+  { key: 'arrived', label: 'Arrived', statuses: ['ARRIVED', 'TERMINAL_ARRIVED'], icon: Truck, color: 'text-cyan-400', bg: 'bg-cyan-500/10' },
+  { key: 'clearance', label: 'Under Clearance', statuses: ['UNDER_CLEARANCE', 'RECEIVED', 'DOCUMENTS_VERIFIED', 'PIECES_VERIFIED', 'WEIGHT_VERIFIED', 'DAMAGE_INSPECTED', 'CUSTOMS_SUBMITTED', 'CUSTOMS_ASSESSED', 'CUSTOMS_PAID', 'CUSTOMS_INSPECTION'], icon: FileCheck, color: 'text-orange-400', bg: 'bg-orange-500/10' },
+  { key: 'released', label: 'Released', statuses: ['RELEASED', 'CUSTOMS_CLEARED'], icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+  { key: 'warehouse', label: 'Warehouse', statuses: ['WAREHOUSE', 'WAREHOUSE_RECEIVING', 'MANIFEST_VERIFIED', 'MAWB_RECEIVED'], icon: Warehouse, color: 'text-purple-400', bg: 'bg-purple-500/10' },
+  { key: 'delivery', label: 'Delivery', statuses: ['DELIVERY'], icon: Truck, color: 'text-teal-400', bg: 'bg-teal-500/10' },
+  { key: 'exception', label: 'Exceptions', statuses: ['EXCEPTION', 'CUSTOMS_HOLD'], icon: AlertTriangle, color: 'text-red-400', bg: 'bg-red-500/10' },
 ];
 
 const statusVariant = (s: string) => {
   switch (s) {
-    case 'RELEASED': case 'DELIVERED': case 'COMPLETED': case 'CUSTOMS_CLEARED': return 'success' as const;
-    case 'TERMINAL_ARRIVED': case 'RECEIVED': case 'IN_TRANSIT': return 'info' as const;
+    case 'RELEASED': case 'DELIVERED': case 'COMPLETED': case 'CUSTOMS_CLEARED': case 'WAREHOUSE': return 'success' as const;
+    case 'ARRIVED': case 'TERMINAL_ARRIVED': case 'RECEIVED': case 'IN_TRANSIT': case 'DELIVERY': return 'info' as const;
     case 'PRE_ARRIVAL': case 'MANIFEST_VERIFIED': case 'MAWB_RECEIVED': return 'pending' as const;
-    case 'DOCUMENTS_VERIFIED': case 'PIECES_VERIFIED': case 'WEIGHT_VERIFIED': case 'DAMAGE_INSPECTED': return 'warning' as const;
+    case 'UNDER_CLEARANCE': case 'DOCUMENTS_VERIFIED': case 'PIECES_VERIFIED': case 'WEIGHT_VERIFIED': case 'DAMAGE_INSPECTED': return 'warning' as const;
     case 'CUSTOMS_SUBMITTED': case 'CUSTOMS_ASSESSED': case 'CUSTOMS_PAID': case 'CUSTOMS_INSPECTION': return 'warning' as const;
     case 'EXCEPTION': case 'CUSTOMS_HOLD': return 'error' as const;
     default: return 'pending' as const;
@@ -255,13 +256,66 @@ export default function ImportPage() {
 
   const getStatusActions = (item: ImportItem) => {
     const s = item.workflowStatus;
-    if (s === 'PRE_ARRIVAL') return (
+    if (s === 'PRE_ARRIVAL' || s === 'IN_TRANSIT' || s === 'DISPATCHED') return (
       <div className="flex gap-1">
         <Button size="sm" variant="default" className="h-7 text-xs" onClick={() => handleAction('CONFIRM_ARRIVAL', item.id)}>
           <Truck className="mr-1 h-3 w-3" /> Confirm Arrival
         </Button>
         <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => router.push(`/workspace/import/${item.id}`)}>
           View
+        </Button>
+      </div>
+    );
+    if (s === 'ARRIVED') return (
+      <div className="flex gap-1">
+        <Button size="sm" variant="default" className="h-7 text-xs" onClick={() => handleAction('START_CLEARANCE', item.id)}>
+          <FileText className="mr-1 h-3 w-3" /> Start Clearance
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => router.push(`/workspace/import/${item.id}`)}>
+          Detail
+        </Button>
+      </div>
+    );
+    if (s === 'UNDER_CLEARANCE') return (
+      <div className="flex gap-1">
+        <Button size="sm" variant="default" className="h-7 text-xs" onClick={() => handleAction('RELEASE_CLEARANCE', item.id)}>
+          <CheckCircle className="mr-1 h-3 w-3" /> Release Cargo
+        </Button>
+        <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => handleAction('REPORT_HOLD', item.id)}>
+          <XCircle className="mr-1 h-3 w-3" /> Hold
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => router.push(`/workspace/import/${item.id}`)}>
+          Detail
+        </Button>
+      </div>
+    );
+    if (s === 'RELEASED') return (
+      <div className="flex gap-1">
+        <Button size="sm" variant="default" className="h-7 text-xs" onClick={() => handleAction('RECEIVE_INTO_WAREHOUSE', item.id)}>
+          <Warehouse className="mr-1 h-3 w-3" /> Receive Into Warehouse
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => router.push(`/workspace/import/${item.id}`)}>
+          Detail
+        </Button>
+      </div>
+    );
+    if (s === 'WAREHOUSE') return (
+      <div className="flex gap-1">
+        <span className="flex items-center gap-1 text-xs text-green-400">
+          <CheckCircle className="h-3 w-3" /> In Warehouse
+        </span>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => router.push('/workspace/warehouse')}>
+          <Warehouse className="mr-1 h-3 w-3" /> Warehouse
+        </Button>
+      </div>
+    );
+    if (s === 'DELIVERY') return (
+      <div className="flex gap-1">
+        <span className="flex items-center gap-1 text-xs text-teal-400">
+          <Truck className="h-3 w-3" /> Delivery
+        </span>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => router.push('/workspace/delivery')}>
+          <Truck className="mr-1 h-3 w-3" /> Delivery
         </Button>
       </div>
     );

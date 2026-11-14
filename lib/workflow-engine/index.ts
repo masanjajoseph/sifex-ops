@@ -14,6 +14,14 @@ import { evaluateRulesForWorkflowTransition } from "@/lib/rules-engine";
 import { createActivityFeedEntry } from "@/lib/activity-feed";
 
 const CARGO_STATUS_MAP: Record<string, CargoStatus> = {
+  ACCEPTED: CargoStatus.ACCEPTED,
+  ASSIGNED: CargoStatus.RCS,
+  DEPARTED: CargoStatus.DEPARTED,
+  ARRIVED: CargoStatus.ARRIVED,
+  UNDER_CLEARANCE: CargoStatus.UNDER_CLEARANCE,
+  RELEASED: CargoStatus.RELEASED,
+  WAREHOUSE: CargoStatus.RELEASED,
+  DELIVERY: CargoStatus.AWAITING_DELIVERY,
   DRAFT: CargoStatus.INITIATED,
   VALIDATED: CargoStatus.ACCEPTED,
   HAWB_GENERATED: CargoStatus.RCS,
@@ -52,9 +60,7 @@ const CARGO_STATUS_MAP: Record<string, CargoStatus> = {
   WAITING_DELIVERY: CargoStatus.AWAITING_DELIVERY,
   RIDER_ASSIGNED: CargoStatus.AWAITING_DELIVERY,
   WAITING_ASSIGNMENT: CargoStatus.AWAITING_DELIVERY,
-  ASSIGNED: CargoStatus.AWAITING_DELIVERY,
   STARTED: CargoStatus.OUT_FOR_DELIVERY,
-  ARRIVED: CargoStatus.OUT_FOR_DELIVERY,
   CANCELLED: CargoStatus.CANCELLED,
   OUT_FOR_DELIVERY: CargoStatus.OUT_FOR_DELIVERY,
   DELIVERED: CargoStatus.DELIVERED,
@@ -62,6 +68,14 @@ const CARGO_STATUS_MAP: Record<string, CargoStatus> = {
 };
 
 const STATUS_TO_WORKFLOW_STAGE: Record<string, WorkflowStage> = {
+  ACCEPTED: WorkflowStage.EXPORT,
+  ASSIGNED: WorkflowStage.EXPORT,
+  DEPARTED: WorkflowStage.EXPORT,
+  ARRIVED: WorkflowStage.IMPORT,
+  UNDER_CLEARANCE: WorkflowStage.IMPORT,
+  RELEASED: WorkflowStage.IMPORT,
+  WAREHOUSE: WorkflowStage.WAREHOUSE,
+  DELIVERY: WorkflowStage.DELIVERY,
   DRAFT: WorkflowStage.EXPORT,
   VALIDATED: WorkflowStage.EXPORT,
   HAWB_GENERATED: WorkflowStage.EXPORT,
@@ -100,9 +114,7 @@ const STATUS_TO_WORKFLOW_STAGE: Record<string, WorkflowStage> = {
   WAITING_DELIVERY: WorkflowStage.DELIVERY,
   WAITING_ASSIGNMENT: WorkflowStage.DELIVERY,
   RIDER_ASSIGNED: WorkflowStage.DELIVERY,
-  ASSIGNED: WorkflowStage.DELIVERY,
   STARTED: WorkflowStage.DELIVERY,
-  ARRIVED: WorkflowStage.DELIVERY,
   OUT_FOR_DELIVERY: WorkflowStage.DELIVERY,
   CANCELLED: WorkflowStage.DELIVERY,
   DELIVERED: WorkflowStage.COMPLETED,
@@ -142,7 +154,10 @@ export class WorkflowEngine {
     });
 
     const result = await prisma.$transaction(async (tx) => {
-      const cargoStatus = CARGO_STATUS_MAP[toStatus] || CargoStatus.INITIATED;
+      const cargoStatus = action === "GENERATE_MANIFEST" && fromStatus === "LOADED"
+        // Manifesting after loading must not erase the fact that cargo is loaded.
+        ? CargoStatus.LOADED
+        : (CARGO_STATUS_MAP[toStatus] || CargoStatus.INITIATED);
       const workflowStage = STATUS_TO_WORKFLOW_STAGE[toStatus] || WorkflowStage.EXPORT;
       const departmentId = userInfo?.departmentId || null;
       const branchId = userInfo?.branchId || null;
@@ -166,26 +181,38 @@ export class WorkflowEngine {
         const totalVolume = allHawbs.reduce((s: number, h: any) => s + h.volume, 0);
 
         const manifestCount = await tx.manifest.count();
-        const manifestNumber = `MFT-${String(manifestCount + 1).padStart(6, '0')}`;
-
         const flightId = context.metadata?.flightId as string;
-        if (!flightId) {
-          throw new AppError("flightId is required for manifest generation", 400, "VALIDATION_ERROR");
-        }
 
-        await tx.manifest.create({
-          data: {
-            flightId,
-            manifestNumber,
-            manifestType: "EXPORT",
-            status: "CREATED",
-            totalWeight,
-            totalVolume,
-            totalPieces,
-            masterAWBIds: [entityId],
-            createdAt: new Date(),
-          },
+        // Loading and manifesting may happen in either order. If the manifest
+        // already exists we only stamp it onto the MAWB; never create a duplicate.
+        const existingManifest = await tx.manifest.findFirst({
+          where: { masterAWBIds: { has: entityId }, status: { notIn: ["CLOSED", "CANCELLED"] } },
+          select: { manifestNumber: true },
         });
+
+        let manifestNumber = existingManifest?.manifestNumber;
+
+        if (!manifestNumber) {
+          if (!flightId) {
+            throw new AppError("flightId is required for manifest generation", 400, "VALIDATION_ERROR");
+          }
+
+          manifestNumber = `MFT-${String(manifestCount + 1).padStart(6, '0')}`;
+
+          await tx.manifest.create({
+            data: {
+              flightId,
+              manifestNumber,
+              manifestType: "EXPORT",
+              status: "CREATED",
+              totalWeight,
+              totalVolume,
+              totalPieces,
+              masterAWBIds: [entityId],
+              createdAt: new Date(),
+            },
+          });
+        }
 
         await tx.masterAWB.update({
           where: { id: entityId },
@@ -398,7 +425,7 @@ export class WorkflowEngine {
         }
       }
 
-      if (toStatus === "WAREHOUSE_RECEIVING") {
+      if (toStatus === "WAREHOUSE_RECEIVING" || toStatus === "WAREHOUSE") {
         await this.autoGenerateInvoice(tx, entityType, entityId, userId);
       }
 
@@ -822,7 +849,11 @@ export class WorkflowEngine {
         where: { id: hawb.id },
         data: {
           cargoStatus: CargoStatus.AWAITING_DELIVERY,
-          workflowStage: WorkflowStage.DELIVERY,
+          // Stay visible in the warehouse until a rider is assigned and the
+          // delivery actually starts. The delivery task is available to the
+          // delivery team immediately.
+          workflowStage: WorkflowStage.WAREHOUSE,
+          workflowStatus: "PAID",
         },
       });
 
@@ -899,7 +930,7 @@ export class WorkflowEngine {
     if (!task) return;
 
     const deliveryStatusMap: Record<string, { workflowStatus: string; cargoStatus: CargoStatus; stage: WorkflowStage }> = {
-      ASSIGNED: { workflowStatus: "RIDER_ASSIGNED", cargoStatus: CargoStatus.AWAITING_DELIVERY, stage: WorkflowStage.DELIVERY },
+      ASSIGNED: { workflowStatus: "RIDER_ASSIGNED", cargoStatus: CargoStatus.AWAITING_DELIVERY, stage: WorkflowStage.WAREHOUSE },
       STARTED: { workflowStatus: "OUT_FOR_DELIVERY", cargoStatus: CargoStatus.OUT_FOR_DELIVERY, stage: WorkflowStage.DELIVERY },
       ARRIVED: { workflowStatus: "OUT_FOR_DELIVERY", cargoStatus: CargoStatus.OUT_FOR_DELIVERY, stage: WorkflowStage.DELIVERY },
       DELIVERED: { workflowStatus: "DELIVERED", cargoStatus: CargoStatus.DELIVERED, stage: WorkflowStage.COMPLETED },

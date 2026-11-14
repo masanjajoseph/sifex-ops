@@ -56,16 +56,32 @@ export default function ProfilePage() {
   }, []);
 
   useEffect(() => {
-    if (session?.user) {
-      const parts = session.user.name?.split(' ') || [];
-      setProfile({
-        firstName: parts[0] || '',
-        lastName: parts.slice(1).join(' ') || '',
-        email: session.user.email || '',
-        phone: '',
-      });
-    }
-  }, [session]);
+    if (!session?.user?.id) return;
+
+    // Seed from the session immediately so the form never looks empty…
+    const parts = session.user.name?.split(' ') || [];
+    setProfile(p => ({
+      firstName: p.firstName || parts[0] || '',
+      lastName: p.lastName || parts.slice(1).join(' ') || '',
+      email: p.email || session.user.email || '',
+      phone: p.phone || '',
+    }));
+
+    // …then load the authoritative record (the session token can be stale and
+    // does not carry the phone number at all).
+    fetch(`/api/users/${session.user.id}`, { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => {
+        if (!j) return;
+        setProfile({
+          firstName: j.firstName || '',
+          lastName: j.lastName || '',
+          email: j.email || '',
+          phone: j.phone || '',
+        });
+      })
+      .catch(() => {});
+  }, [session?.user?.id, session?.user?.email, session?.user?.name]);
 
   useEffect(() => {
     if (otpCountdown > 0) {
@@ -92,7 +108,12 @@ export default function ProfilePage() {
       });
       if (res.ok) {
         const updated = await res.json();
-        setProfile(p => ({ ...p, email: updated.email }));
+        setProfile({
+          firstName: updated.firstName ?? profile.firstName,
+          lastName: updated.lastName ?? profile.lastName,
+          email: updated.email ?? profile.email,
+          phone: updated.phone ?? profile.phone,
+        });
         setProfileSaved(true);
         showMsg('success', 'Profile updated');
         await updateSession();

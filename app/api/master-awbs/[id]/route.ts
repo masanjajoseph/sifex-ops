@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { apiSuccess, apiError, withErrorHandler, NotFoundError } from "@/lib/errors";
+import { apiSuccess, apiError, withErrorHandler, NotFoundError, AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { CargoStatus } from "@/types/cargo-domain";
 import { syncWorkflowStageOnStatusChange } from "@/features/cargo/workflows/workflow-stage.workflow";
@@ -119,12 +119,18 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
         await workflowEngine.execute(context);
       }
     } else {
-      await prisma.masterAWB.update({
-        where: { id },
-        data: { workflowStatus: data.workflowStatus as string } as any,
-      });
+      return apiError(new AppError(
+        `No valid workflow transition from ${existing.workflowStatus} to ${data.workflowStatus}. Use /api/workflow with the proper action.`,
+        400,
+        "INVALID_TRANSITION",
+      ));
     }
   }
+
+  // Status changes are owned by the workflow engine; never write them again
+  // through the generic PATCH path.
+  delete data.workflowStatus;
+  delete data.workflowStage;
 
   if (data.cargoStatus && existing.cargoStatus !== data.cargoStatus) {
     const newStatus = data.cargoStatus as CargoStatus;

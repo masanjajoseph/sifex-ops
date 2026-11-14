@@ -5,6 +5,7 @@ import { workflowEngine } from "@/lib/workflow-engine";
 import { getModuleForStatus, findTransition } from "@/lib/workflow-engine/definitions";
 import { getAvailableActions, ActionContext } from "@/lib/workflow-engine/actions";
 import { WorkflowContext, WorkflowModule } from "@/lib/workflow-engine/types";
+import { CargoStatus, WorkflowStage } from "@/types/cargo-domain";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -97,7 +98,11 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
   if (!record) return apiError(new NotFoundError(`${entityType} not found`));
 
-  const module = getModuleForStatus(currentStatus!);
+  const module = entityType === "DeliveryTask" || entityType === "DeliveryAssignment"
+    ? WorkflowModule.DELIVERY
+    : entityType === "BillingRecord"
+      ? WorkflowModule.BILLING
+      : getModuleForStatus(currentStatus!);
 
   if (action === "GET_ACTIONS") {
     const actionContext: ActionContext = {
@@ -119,6 +124,70 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   const transition = findTransition(currentStatus!, action);
   if (!transition) {
     return apiError(new AppError(`No valid transition found for status ${currentStatus} and action ${action}`, 400, "INVALID_TRANSITION"));
+  }
+
+  // --- Special handling for ASSIGN_HAWB (bulk attach existing HAWBs) ---
+  if (action === "ASSIGN_HAWB" && entityType === "MasterAWB") {
+    const hawbIds = Array.isArray(metadata?.hawbIds) ? (metadata.hawbIds as string[]) : [];
+    if (hawbIds.length === 0) {
+      return apiError(new AppError("Select at least one House AWB to assign.", 400, "VALIDATION_ERROR"));
+    }
+
+    const hawbs = await prisma.houseAWB.findMany({
+      where: { id: { in: hawbIds }, deletedAt: null },
+      select: { id: true, masterAWBId: true },
+    });
+
+    if (hawbs.length === 0) {
+      return apiError(new AppError("No matching House AWBs found.", 400, "VALIDATION_ERROR"));
+    }
+
+    const attachedElsewhere = hawbs.filter(h => h.masterAWBId && h.masterAWBId !== entityId);
+    if (attachedElsewhere.length > 0) {
+      return apiError(new AppError(`${attachedElsewhere.length} selected House AWB(s) already belong to another Master AWB.`, 400, "VALIDATION_ERROR"));
+    }
+
+    await prisma.houseAWB.updateMany({
+      where: { id: { in: hawbs.map(h => h.id) }, deletedAt: null },
+      data: {
+        masterAWBId: entityId,
+        workflowStatus: "ASSIGNED",
+        cargoStatus: CargoStatus.RCS,
+        workflowStage: WorkflowStage.EXPORT,
+      },
+    });
+
+    // Keep the MAWB totals in sync with everything now inside the bag.
+    const totals = await prisma.houseAWB.aggregate({
+      where: { masterAWBId: entityId, deletedAt: null },
+      _sum: { pieces: true, weight: true, volume: true },
+    });
+    await prisma.masterAWB.update({
+      where: { id: entityId },
+      data: {
+        awbPieces: totals._sum.pieces || 0,
+        awbWeight: totals._sum.weight || 0,
+        volume: totals._sum.volume || 0,
+      },
+    });
+
+    const context: WorkflowContext = {
+      entityType: entityType as WorkflowContext["entityType"],
+      entityId,
+      fromStatus: currentStatus!,
+      toStatus: transition.to,
+      module,
+      userId: session.user.id!,
+      departmentId: session.user.departmentId || undefined,
+      userPermissions: session.user.permissions?.length ? session.user.permissions : undefined,
+      hawbToStatus: "ASSIGNED",
+      relatedHaWbIds: hawbs.map(h => h.id),
+      metadata: { action, assignedHawbCount: hawbs.length, ...(metadata || {}) },
+    };
+
+    Object.defineProperty(context, "action", { value: action, enumerable: true });
+    const result = await workflowEngine.execute(context);
+    return apiSuccess(result);
   }
 
   // --- Special handling for ASSIGN_MAWB ---
@@ -166,8 +235,8 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
   // --- Special handling for GENERATE_MANIFEST ---
   if (action === "GENERATE_MANIFEST" && entityType === "MasterAWB") {
-    if (currentStatus !== "MAWB_ASSIGNED") {
-      return apiError(new AppError("Master AWB must be in MAWB_ASSIGNED status to generate a manifest.", 400, "VALIDATION_ERROR"));
+    if (!["ASSIGNED", "LOADED", "MAWB_ASSIGNED"].includes(currentStatus!)) {
+      return apiError(new AppError("Assign House AWBs to this Master AWB before generating a manifest.", 400, "VALIDATION_ERROR"));
     }
 
     const allHawbs = await prisma.houseAWB.findMany({
@@ -179,16 +248,10 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       return apiError(new AppError("No House AWBs attached. Assign House AWBs before generating Manifest.", 400, "VALIDATION_ERROR"));
     }
 
-    const notReady = allHawbs.filter(h => h.workflowStatus !== "READY_FOR_MANIFEST" && h.workflowStatus !== "MANIFESTED");
+    const readyStatuses = ["ASSIGNED", "READY_FOR_MANIFEST", "MANIFESTED", "LOADED"];
+    const notReady = allHawbs.filter(h => !readyStatuses.includes(h.workflowStatus));
     if (notReady.length > 0) {
       return apiError(new AppError("Assign all House AWBs before generating Manifest.", 400, "VALIDATION_ERROR"));
-    }
-
-    const existingManifest = await prisma.manifest.findFirst({
-      where: { masterAWBIds: { has: entityId }, status: { notIn: ["CLOSED", "CANCELLED"] } },
-    });
-    if (existingManifest) {
-      return apiError(new AppError("Manifest already exists for this Master AWB.", 400, "VALIDATION_ERROR"));
     }
 
     const flightId = await resolveFlightId(entityId, metadata);
@@ -212,6 +275,16 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     Object.defineProperty(context, "action", { value: action, enumerable: true });
     const result = await workflowEngine.execute(context);
     return apiSuccess(result);
+  }
+
+  // --- Departure guard: manifest and loading may happen in either order ---
+  if (action === "DEPART_FLIGHT" && entityType === "MasterAWB") {
+    if (currentStatus === "MANIFESTED" && record.cargoStatus !== "LOADED") {
+      return apiError(new AppError("Complete loading before the flight can depart.", 400, "VALIDATION_ERROR"));
+    }
+    if (currentStatus === "LOADED" && !record.manifestNumber) {
+      return apiError(new AppError("Generate the manifest before the flight can depart.", 400, "VALIDATION_ERROR"));
+    }
   }
 
   // --- Special handling for ASSIGN_FLIGHT ---
@@ -325,8 +398,16 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
     ) || [];
   }
 
-  const { getQuickActionsForStatus } = await import("@/lib/workflow-engine/definitions");
-  const actions = getQuickActionsForStatus(currentStatus, permissions);
+  const { getQuickActionsForStatus, WORKFLOW_DEFINITIONS } = await import("@/lib/workflow-engine/definitions");
+  let actionModule = getModuleForStatus(currentStatus);
+  if (entityType === "DeliveryTask" || entityType === "DeliveryAssignment") actionModule = WorkflowModule.DELIVERY;
+  if (entityType === "BillingRecord") actionModule = WorkflowModule.BILLING;
 
-  return apiSuccess({ status: currentStatus, module: getModuleForStatus(currentStatus), actions });
+  const actions = actionModule
+    ? (WORKFLOW_DEFINITIONS[actionModule].quickActions[currentStatus] || []).filter(
+        a => !a.requiresPermission || permissions.includes(a.requiresPermission),
+      )
+    : getQuickActionsForStatus(currentStatus, permissions);
+
+  return apiSuccess({ status: currentStatus, module: actionModule, actions });
 });

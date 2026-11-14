@@ -6,10 +6,17 @@ import { requireAuth, requirePermission, createAuditLog, apiError, apiForbidden 
 const SALT_ROUNDS = 12;
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { session, error } = await requirePermission("users.view");
+  const { session, error } = await requireAuth();
   if (error) return error;
 
   const { id } = await params;
+
+  // Everyone may read their own profile; reading someone else needs users.view.
+  const isOwnProfile = session.user.id === id;
+  const hasPermission = session.user.permissions?.includes("users.view");
+  if (!isOwnProfile && !hasPermission) {
+    return apiForbidden();
+  }
 
   const user = await prisma.user.findUnique({
     where: { id },
@@ -128,6 +135,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       email: user!.email,
       firstName: user!.firstName,
       lastName: user!.lastName,
+      phone: user!.phone,
       status: user!.status,
       roles: user!.userRoles.map((ur) => ur.role),
       department: user!.department,

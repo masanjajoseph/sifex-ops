@@ -43,15 +43,12 @@ interface DashboardStats {
 }
 
 const WORKFLOW_STEPS = [
-  { key: 'DRAFT', label: 'Draft', icon: FileText },
-  { key: 'VALIDATED', label: 'Validated', icon: CheckCircle },
-  { key: 'HAWB_GENERATED', label: 'HAWB', icon: FileText },
-  { key: 'LOADING', label: 'Loading', icon: Package },
-  { key: 'LOADED', label: 'Loaded', icon: CheckCircle },
-  { key: 'MAWB_ASSIGNED', label: 'MAWB', icon: Link },
-  { key: 'MANIFEST_CREATED', label: 'Manifest', icon: Package },
-  { key: 'FLIGHT_ASSIGNED', label: 'Flight', icon: Plane },
-  { key: 'DISPATCHED', label: 'Dispatched', icon: Send },
+  { key: 'ACCEPTED', label: 'Accepted', icon: CheckCircle },
+  { key: 'ASSIGNED', label: 'HAWBs Assigned', icon: Link },
+  { key: 'MANIFESTED', label: 'Manifested', icon: FileText },
+  { key: 'LOADED', label: 'Loaded', icon: Package },
+  { key: 'DEPARTED', label: 'Departed', icon: Plane },
+  { key: 'IN_TRANSIT', label: 'In Transit', icon: Send },
 ];
 
 const statusVariant = (s: string) => {
@@ -67,17 +64,21 @@ const statusVariant = (s: string) => {
 
 const statusOptions = [
   { value: 'all', label: 'All Statuses' },
+  { value: 'ACCEPTED', label: 'Accepted' },
+  { value: 'ASSIGNED', label: 'HAWBs Assigned' },
+  { value: 'MANIFESTED', label: 'Manifested' },
+  { value: 'LOADED', label: 'Loaded' },
+  { value: 'DEPARTED', label: 'Departed' },
+  { value: 'IN_TRANSIT', label: 'In Transit' },
   { value: 'DRAFT', label: 'Draft' },
   { value: 'VALIDATED', label: 'Validated' },
   { value: 'HAWB_GENERATED', label: 'HAWB Generated' },
   { value: 'LOADING', label: 'Loading' },
-  { value: 'LOADED', label: 'Loaded' },
   { value: 'MAWB_ASSIGNED', label: 'MAWB Assigned' },
   { value: 'MANIFEST_CREATED', label: 'Manifest Created' },
   { value: 'FLIGHT_ASSIGNED', label: 'Flight Assigned' },
   { value: 'READY_FOR_DISPATCH', label: 'Ready for Dispatch' },
   { value: 'DISPATCHED', label: 'Dispatched' },
-  { value: 'IN_TRANSIT', label: 'In Transit' },
   { value: 'RELEASED', label: 'Released' },
   { value: 'DELIVERED', label: 'Delivered' },
   { value: 'CANCELLED', label: 'Cancelled' },
@@ -85,6 +86,23 @@ const statusOptions = [
 
 function QuickActionBar({ workflowStatus, onAction, actionError }: { workflowStatus: string; onAction: (action: string) => void; actionError?: string | null }) {
   const actions: Record<string, { label: string; icon: any; variant: 'default' | 'outline' | 'destructive'; action: string }[]> = {
+    ACCEPTED: [
+      { label: 'Assign HAWBs', icon: Link, variant: 'default', action: 'ASSIGN_HAWB' },
+      { label: 'View Cargo', icon: Package, variant: 'outline', action: 'VIEW_CARGO' },
+    ],
+    ASSIGNED: [
+      { label: 'Generate Manifest', icon: FileText, variant: 'default', action: 'GENERATE_MANIFEST' },
+      { label: 'Complete Loading', icon: Package, variant: 'outline', action: 'COMPLETE_LOADING' },
+    ],
+    MANIFESTED: [
+      { label: 'Complete Loading', icon: Package, variant: 'default', action: 'COMPLETE_LOADING' },
+      { label: 'Depart Flight', icon: Plane, variant: 'default', action: 'DEPART_FLIGHT' },
+      { label: 'Print Manifest', icon: Printer, variant: 'outline', action: 'PRINT_MANIFEST' },
+    ],
+    DEPARTED: [
+      { label: 'Mark In Transit', icon: Send, variant: 'default', action: 'MARK_IN_TRANSIT' },
+      { label: 'View Timeline', icon: Clock, variant: 'outline', action: 'VIEW_TIMELINE' },
+    ],
     DRAFT: [
       { label: 'Edit Shipment', icon: FileText, variant: 'outline', action: 'EDIT_SHIPMENT' },
       { label: 'Validate', icon: CheckCircle, variant: 'default', action: 'VALIDATE_SHIPMENT' },
@@ -103,7 +121,8 @@ function QuickActionBar({ workflowStatus, onAction, actionError }: { workflowSta
       { label: 'Complete Loading', icon: CheckCircle, variant: 'default', action: 'COMPLETE_LOADING' },
     ],
     LOADED: [
-      { label: 'Assign to MAWB', icon: Link, variant: 'default', action: 'ASSIGN_MAWB' },
+      { label: 'Generate Manifest', icon: FileText, variant: 'default', action: 'GENERATE_MANIFEST' },
+      { label: 'Depart Flight', icon: Plane, variant: 'default', action: 'DEPART_FLIGHT' },
     ],
     MAWB_ASSIGNED: [
       { label: 'Generate Manifest', icon: FileText, variant: 'default', action: 'GENERATE_MANIFEST' },
@@ -180,6 +199,14 @@ export default function ExportPage() {
   const [total, setTotal] = useState(0);
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
 
+  const [assignMawbId, setAssignMawbId] = useState<string | null>(null);
+  const [assignMawbNumber, setAssignMawbNumber] = useState('');
+  const [availableHawbs, setAvailableHawbs] = useState<{ id: string; houseAWBNumber: string; trackingNumber: string; pieces: number; weight: number; description?: string | null }[]>([]);
+  const [assignSelected, setAssignSelected] = useState<string[]>([]);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [assignError, setAssignError] = useState('');
+
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -201,8 +228,59 @@ export default function ExportPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const openAssign = async (mawbId: string, mawbNumber: string) => {
+    setAssignMawbId(mawbId);
+    setAssignMawbNumber(mawbNumber);
+    setAssignSelected([]);
+    setAssignError('');
+    setAssignLoading(true);
+    try {
+      const res = await fetch('/api/house-awbs?unassigned=true&scope=export&limit=100', { cache: 'no-store' });
+      if (!res.ok) throw new Error('Failed to load House AWBs');
+      const json = await res.json();
+      setAvailableHawbs(json.data || []);
+    } catch (e) {
+      setAssignError(e instanceof Error ? e.message : 'Failed to load House AWBs');
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
+  const submitAssign = async () => {
+    if (!assignMawbId || assignSelected.length === 0) return;
+    setAssignSaving(true);
+    setAssignError('');
+    try {
+      const res = await fetch('/api/workflow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entityType: 'MasterAWB',
+          entityId: assignMawbId,
+          action: 'ASSIGN_HAWB',
+          metadata: { hawbIds: assignSelected },
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || 'Failed to assign House AWBs');
+      }
+      setAssignMawbId(null);
+      fetchData();
+    } catch (e) {
+      setAssignError(e instanceof Error ? e.message : 'Failed to assign House AWBs');
+    } finally {
+      setAssignSaving(false);
+    }
+  };
+
   const handleQuickAction = async (action: string, mawbId: string, currentStatus: string) => {
     setActionErrors(prev => ({ ...prev, [mawbId]: '' }));
+    if (action === 'ASSIGN_HAWB') {
+      const mawb = exports.find(e => e.id === mawbId);
+      openAssign(mawbId, mawb?.awbNumber || '');
+      return;
+    }
     const navActions: Record<string, () => void> = {
       EDIT_SHIPMENT: () => router.push(`/workspace/master-awb/${mawbId}?edit=true`),
       VIEW_CARGO: () => router.push(`/workspace/master-awb/${mawbId}`),
@@ -243,8 +321,11 @@ export default function ExportPage() {
             <Button variant="outline" size="sm" onClick={fetchData}>
               <RefreshCw className="mr-1 h-4 w-4" /> Refresh
             </Button>
+            <Button variant="outline" size="sm" onClick={() => router.push('/workspace/export/new?mode=hawb')}>
+              <Plus className="mr-1 h-4 w-4" /> New HAWB
+            </Button>
             <Button size="sm" onClick={() => router.push('/workspace/export/new')}>
-              <Plus className="mr-1 h-4 w-4" /> New Export
+              <Plus className="mr-1 h-4 w-4" /> New MAWB
             </Button>
           </div>
         }
@@ -358,6 +439,74 @@ export default function ExportPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {assignMawbId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl dark:bg-gray-900">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Assign House AWBs</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">MAWB {assignMawbNumber}</p>
+              </div>
+              <button onClick={() => setAssignMawbId(null)} className="text-xs text-gray-400 hover:text-gray-600">
+                Close
+              </button>
+            </div>
+
+            <div className="max-h-80 overflow-y-auto px-5 py-4">
+              {assignLoading ? (
+                <p className="py-6 text-center text-sm text-gray-500">Loading House AWBs…</p>
+              ) : availableHawbs.length === 0 ? (
+                <p className="py-6 text-center text-sm text-gray-500">
+                  No unassigned House AWBs. Create HAWBs first.
+                </p>
+              ) : (
+                <>
+                  <label className="mb-3 flex items-center gap-2 border-b border-gray-100 pb-3 text-sm font-medium text-gray-700 dark:border-gray-800 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={assignSelected.length === availableHawbs.length}
+                      onChange={e => setAssignSelected(e.target.checked ? availableHawbs.map(h => h.id) : [])}
+                    />
+                    Select all ({availableHawbs.length})
+                  </label>
+                  <div className="space-y-2">
+                    {availableHawbs.map(h => (
+                      <label key={h.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-100 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50">
+                        <input
+                          type="checkbox"
+                          checked={assignSelected.includes(h.id)}
+                          onChange={e => setAssignSelected(prev =>
+                            e.target.checked ? [...prev, h.id] : prev.filter(id => id !== h.id)
+                          )}
+                        />
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900 dark:text-white">{h.houseAWBNumber}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {h.trackingNumber} · {h.pieces} pcs · {h.weight} kg
+                            {h.description ? ` · ${h.description}` : ''}
+                          </p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+              {assignError && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{assignError}</p>}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-gray-200 px-5 py-3 dark:border-gray-700">
+              <span className="text-xs text-gray-500 dark:text-gray-400">{assignSelected.length} selected</span>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setAssignMawbId(null)}>Cancel</Button>
+                <Button size="sm" onClick={submitAssign} disabled={assignSaving || assignSelected.length === 0}>
+                  {assignSaving ? 'Assigning…' : 'Assign HAWBs'}
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

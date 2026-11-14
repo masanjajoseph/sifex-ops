@@ -77,9 +77,9 @@ export default function HouseAWBPage() {
             <Button variant="outline" size="sm" onClick={fetchData}>
               <RefreshCw className="mr-1 h-4 w-4" /> Refresh
             </Button>
-            <Link href="/workspace/export/new">
+            <Link href="/workspace/export/new?mode=hawb">
               <Button size="sm">
-                <Plus className="mr-1 h-4 w-4" /> New Export
+                <Plus className="mr-1 h-4 w-4" /> New House AWB
               </Button>
             </Link>
           </div>

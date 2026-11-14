@@ -7,6 +7,11 @@ export enum WorkflowModule {
 }
 
 export enum ExportWorkflowStatus {
+  // Simplified SIFEX export flow:
+  // ACCEPTED → ASSIGNED (HAWBs) → MANIFESTED / LOADED (either order) → DEPARTED → IN_TRANSIT
+  ACCEPTED = "ACCEPTED",
+  ASSIGNED = "ASSIGNED",
+  DEPARTED = "DEPARTED",
   DRAFT = "DRAFT",
   VALIDATED = "VALIDATED",
   HAWB_GENERATED = "HAWB_GENERATED",
@@ -24,6 +29,13 @@ export enum ExportWorkflowStatus {
 }
 
 export enum ImportWorkflowStatus {
+  // Simplified SIFEX import flow:
+  // PRE_ARRIVAL → ARRIVED → UNDER_CLEARANCE → RELEASED → WAREHOUSE → DELIVERY
+  ARRIVED = "ARRIVED",
+  UNDER_CLEARANCE = "UNDER_CLEARANCE",
+  RELEASED = "RELEASED",
+  WAREHOUSE = "WAREHOUSE",
+  DELIVERY = "DELIVERY",
   PRE_ARRIVAL = "PRE_ARRIVAL",
   TERMINAL_ARRIVED = "TERMINAL_ARRIVED",
   MANIFEST_VERIFIED = "MANIFEST_VERIFIED",

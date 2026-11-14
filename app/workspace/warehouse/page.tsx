@@ -40,13 +40,14 @@ export default function WarehousePage() {
   const router = useRouter();
   const isMobile = useMediaQuery('(max-width: 767px)');
   const [shipments, setShipments] = useState<any[]>([]);
+  const [hawbs, setHawbs] = useState<any[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
     awaitingStorage: 0, stored: 0, waitingPayment: 0,
     storedToday: 0, invoiceGenerated: 0, totalInventory: 0,
   });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [tab, setTab] = useState<'awaiting' | 'stored' | 'billing'>('awaiting');
+  const [tab, setTab] = useState<'cargo' | 'awaiting' | 'stored' | 'billing'>('cargo');
   const [assignEntity, setAssignEntity] = useState<string | null>(null);
   const [zones, setZones] = useState<any[]>([]);
   const [locations, setLocations] = useState<any[]>([]);
@@ -68,12 +69,14 @@ export default function WarehousePage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [shipRes, statsRes] = await Promise.all([
+      const [shipRes, statsRes, hawbRes] = await Promise.all([
         fetch('/api/master-awbs?limit=100&scope=warehouse', { cache: 'no-store' }),
         fetch('/api/dashboard/warehouse', { cache: 'no-store' }),
+        fetch('/api/house-awbs?limit=100&scope=warehouse', { cache: 'no-store' }),
       ]);
       if (shipRes.ok) { const j = await shipRes.json(); setShipments(j.data || []); }
       if (statsRes.ok) { const j = await statsRes.json(); if (j.success) setStats(j.data); }
+      if (hawbRes.ok) { const j = await hawbRes.json(); setHawbs(j.data || []); }
     } catch {} finally { setLoading(false); }
   }, []);
 
@@ -92,9 +95,14 @@ export default function WarehousePage() {
       String(i.trackingNumber || '').toLowerCase().includes(search.toLowerCase())
     ), [search]);
 
-  const awaitingStorage = useMemo(() => filterBySearch(shipments.filter((s: any) => s.workflowStatus === 'WAREHOUSE_RECEIVING' || s.workflowStatus === 'AWAITING_STORAGE')), [shipments, filterBySearch]);
+  const awaitingStorage = useMemo(() => filterBySearch(shipments.filter((s: any) => ['WAREHOUSE_RECEIVING', 'AWAITING_STORAGE', 'WAREHOUSE'].includes(s.workflowStatus))), [shipments, filterBySearch]);
   const stored = useMemo(() => filterBySearch(shipments.filter((s: any) => s.workflowStatus === 'STORED')), [shipments, filterBySearch]);
   const billing = useMemo(() => filterBySearch(shipments.filter((s: any) => ['INVOICE_GENERATED', 'WAITING_PAYMENT'].includes(s.workflowStatus))), [shipments, filterBySearch]);
+
+  const warehouseHawbs = useMemo(() => hawbs.filter(h => !search ||
+    String(h.houseAWBNumber || '').toLowerCase().includes(search.toLowerCase()) ||
+    String(h.trackingNumber || '').toLowerCase().includes(search.toLowerCase())
+  ), [hawbs, search]);
 
   const handleAction = async (action: string, entityId: string) => {
     try {
@@ -235,10 +243,11 @@ export default function WarehousePage() {
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="flex rounded-lg border border-gray-200 dark:border-gray-700">
-          <button onClick={() => setTab('awaiting')} className={`px-4 py-2 text-sm font-medium rounded-l-lg ${tab === 'awaiting' ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>Awaiting Storage ({stats.awaitingStorage})</button>
-          <button onClick={() => setTab('stored')} className={`px-4 py-2 text-sm font-medium ${tab === 'stored' ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>Stored ({stats.stored})</button>
-          <button onClick={() => setTab('billing')} className={`px-4 py-2 text-sm font-medium rounded-r-lg ${tab === 'billing' ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>Billing ({stats.waitingPayment})</button>
+        <div className="flex overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+          <button onClick={() => setTab('cargo')} className={`whitespace-nowrap px-4 py-2 text-sm font-medium ${tab === 'cargo' ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>Cargo / HAWBs ({warehouseHawbs.length})</button>
+          <button onClick={() => setTab('awaiting')} className={`whitespace-nowrap px-4 py-2 text-sm font-medium ${tab === 'awaiting' ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>Awaiting Storage ({stats.awaitingStorage})</button>
+          <button onClick={() => setTab('stored')} className={`whitespace-nowrap px-4 py-2 text-sm font-medium ${tab === 'stored' ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>Stored ({stats.stored})</button>
+          <button onClick={() => setTab('billing')} className={`whitespace-nowrap px-4 py-2 text-sm font-medium ${tab === 'billing' ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>Billing ({stats.waitingPayment})</button>
         </div>
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -248,6 +257,44 @@ export default function WarehousePage() {
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+      ) : tab === 'cargo' ? (
+        warehouseHawbs.length === 0 ? <EmptyState icon={<Package className="h-12 w-12" />} title="No cargo in warehouse" description="HAWBs appear here when a shipment is received into the warehouse." />
+        : <div className="divide-y divide-gray-100 dark:divide-gray-800 rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            {warehouseHawbs.map((h: any) => {
+              const charged = h.billingStatus === 'PAID';
+              const riderAssigned = h.workflowStatus === 'RIDER_ASSIGNED';
+              return (
+                <div key={h.id} className="flex items-center justify-between px-5 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{h.houseAWBNumber}</p>
+                    <p className="text-xs text-gray-500">
+                      {h.masterAWB?.awbNumber ? `MAWB ${h.masterAWB.awbNumber}` : 'Unassigned'} · {h.pieces} pcs · {h.weight} kg
+                    </p>
+                    {h.description && <p className="text-xs text-gray-400">{h.description}</p>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge
+                      status={charged ? 'success' : 'warning'}
+                      label={charged ? (riderAssigned ? 'Rider Assigned' : 'Charged') : 'Pending Charge'}
+                    />
+                    {!charged && (
+                      <Button size="sm" variant="default" className="h-7 text-xs" onClick={() => router.push('/workspace/billing')}>
+                        <DollarSign className="mr-1 h-3 w-3" /> Charge in Finance
+                      </Button>
+                    )}
+                    {charged && !riderAssigned && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => router.push('/workspace/delivery')}>
+                        <Truck className="mr-1 h-3 w-3" /> Delivery
+                      </Button>
+                    )}
+                    {riderAssigned && (
+                      <span className="text-xs text-blue-500">Awaiting delivery start</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
       ) : tab === 'awaiting' ? (
         awaitingStorage.length === 0 ? <EmptyState icon={<Package className="h-12 w-12" />} title="No shipments awaiting storage" description="Import shipments will appear here when received into warehouse." />
         : <div className="divide-y divide-gray-100 dark:divide-gray-800 rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
