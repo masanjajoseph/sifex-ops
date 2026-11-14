@@ -87,7 +87,6 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
     acceptedCount: countFor(["ACCEPTED"]),
     assignedCount: countFor(["ASSIGNED"]),
     manifestedCount: countFor(["MANIFESTED"]),
-    loadedCount,
     departedCount: countFor(["DEPARTED"]),
     inTransitCount: countFor(["IN_TRANSIT", "PRE_ARRIVAL"]),
     draftCount,
