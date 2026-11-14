@@ -31,14 +31,12 @@ interface MasterAWB {
 }
 
 interface DashboardStats {
-  draftCount: number;
-  validatedCount: number;
-  hawbGeneratedCount: number;
-  loadingCount: number;
+  acceptedCount: number;
+  assignedCount: number;
+  manifestedCount: number;
   loadedCount: number;
-  mawbAssignedCount: number;
-  readyForDispatchCount: number;
-  dispatchedToday: number;
+  departedCount: number;
+  inTransitCount: number;
   flightsToday: number;
 }
 
@@ -69,22 +67,9 @@ const statusOptions = [
   { value: 'MANIFESTED', label: 'Manifested' },
   { value: 'LOADED', label: 'Loaded' },
   { value: 'DEPARTED', label: 'Departed' },
-  { value: 'IN_TRANSIT', label: 'In Transit' },
-  { value: 'DRAFT', label: 'Draft' },
-  { value: 'VALIDATED', label: 'Validated' },
-  { value: 'HAWB_GENERATED', label: 'HAWB Generated' },
-  { value: 'LOADING', label: 'Loading' },
-  { value: 'MAWB_ASSIGNED', label: 'MAWB Assigned' },
-  { value: 'MANIFEST_CREATED', label: 'Manifest Created' },
-  { value: 'FLIGHT_ASSIGNED', label: 'Flight Assigned' },
-  { value: 'READY_FOR_DISPATCH', label: 'Ready for Dispatch' },
-  { value: 'DISPATCHED', label: 'Dispatched' },
-  { value: 'RELEASED', label: 'Released' },
-  { value: 'DELIVERED', label: 'Delivered' },
-  { value: 'CANCELLED', label: 'Cancelled' },
 ];
 
-function QuickActionBar({ workflowStatus, onAction, actionError }: { workflowStatus: string; onAction: (action: string) => void; actionError?: string | null }) {
+function QuickActionBar({ workflowStatus, cargoStatus, manifestNumber, onAction, actionError }: { workflowStatus: string; cargoStatus?: string | null; manifestNumber?: string | null; onAction: (action: string) => void; actionError?: string | null }) {
   const actions: Record<string, { label: string; icon: any; variant: 'default' | 'outline' | 'destructive'; action: string }[]> = {
     ACCEPTED: [
       { label: 'Assign HAWBs', icon: Link, variant: 'default', action: 'ASSIGN_HAWB' },
@@ -150,7 +135,13 @@ function QuickActionBar({ workflowStatus, onAction, actionError }: { workflowSta
     ],
   };
 
-  const currentActions = actions[workflowStatus] || [];
+  const currentActions = (actions[workflowStatus] || []).filter(a => {
+    // Never offer a step that is already done: cargo/loading and manifesting can
+    // happen in either order, so gate the actions on the actual cargo state.
+    if (a.action === 'COMPLETE_LOADING' && cargoStatus === 'LOADED') return false;
+    if (a.action === 'GENERATE_MANIFEST' && manifestNumber) return false;
+    return true;
+  });
 
   if (currentActions.length === 0 && !actionError) return null;
 
@@ -187,9 +178,8 @@ export default function ExportPage() {
   const router = useRouter();
   const [exports, setExports] = useState<MasterAWB[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
-    draftCount: 0, validatedCount: 0, hawbGeneratedCount: 0,
-    loadingCount: 0, loadedCount: 0,
-    mawbAssignedCount: 0, readyForDispatchCount: 0, dispatchedToday: 0, flightsToday: 0,
+    acceptedCount: 0, assignedCount: 0, manifestedCount: 0,
+    loadedCount: 0, departedCount: 0, inTransitCount: 0, flightsToday: 0,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -331,10 +321,11 @@ export default function ExportPage() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-4">
-        <StatCard label="Draft" value={stats.draftCount} icon={<FileText className="h-5 w-5" />} />
-        <StatCard label="Pending HAWB" value={stats.validatedCount} icon={<CheckCircle className="h-5 w-5" />} />
-        <StatCard label="Loading" value={stats.loadingCount} icon={<Package className="h-5 w-5" />} />
+      <div className="grid gap-4 sm:grid-cols-5">
+        <StatCard label="Accepted" value={stats.acceptedCount} icon={<CheckCircle className="h-5 w-5" />} />
+        <StatCard label="HAWBs Assigned" value={stats.assignedCount} icon={<Link className="h-5 w-5" />} />
+        <StatCard label="Manifested" value={stats.manifestedCount} icon={<FileText className="h-5 w-5" />} />
+        <StatCard label="Loaded" value={stats.loadedCount} icon={<Package className="h-5 w-5" />} />
         <StatCard label="Flights Today" value={stats.flightsToday} icon={<Plane className="h-5 w-5" />} />
       </div>
 
@@ -425,7 +416,7 @@ export default function ExportPage() {
                       <StatusBadge status={isDispatched ? 'info' : statusVariant(e.workflowStatus || e.cargoStatus)} label={(e.workflowStatus || e.cargoStatus).replace(/_/g, ' ')} />
                     </div>
                   </div>
-                  <QuickActionBar workflowStatus={e.workflowStatus} onAction={(action) => handleQuickAction(action, e.id, e.workflowStatus)} actionError={actionErrors[e.id]} />
+                  <QuickActionBar workflowStatus={e.workflowStatus} cargoStatus={(e as any).cargoStatus} manifestNumber={(e as any).manifestNumber} onAction={(action) => handleQuickAction(action, e.id, e.workflowStatus)} actionError={actionErrors[e.id]} />
                 </div>
               );
             })}

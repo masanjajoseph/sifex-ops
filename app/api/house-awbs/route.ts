@@ -18,6 +18,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   const status = searchParams.get("status") || undefined;
   const notStatus = searchParams.get("notStatus") || undefined; // comma-separated
   const masterAWBId = searchParams.get("masterAWBId") || undefined;
+  const unassigned = searchParams.get("unassigned") === "true";
   const search = searchParams.get("search") || undefined;
 
   const scope = searchParams.get("scope") || undefined;
@@ -41,6 +42,9 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
     where.workflowStage = WorkflowStage.DELIVERY;
   }
   if (masterAWBId) where.masterAWBId = masterAWBId;
+  // Standalone HAWBs that have not been attached to a Master AWB yet — these
+  // are the only HAWBs offered by the bulk "Assign HAWB" dialog.
+  else if (unassigned) where.masterAWBId = null;
   if (search) {
     where.OR = [
       { houseAWBNumber: { contains: search, mode: "insensitive" } },

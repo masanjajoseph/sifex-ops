@@ -57,6 +57,18 @@ const PIPELINE_COLUMNS = [
   { key: 'exception', label: 'Exceptions', statuses: ['EXCEPTION', 'CUSTOMS_HOLD'], icon: AlertTriangle, color: 'text-red-400', bg: 'bg-red-500/10' },
 ];
 
+// One-click advance used on the pipeline cards, so the operator never has to
+// open the detail page just to move the shipment to the next stage.
+const NEXT_STEP: Record<string, { label: string; action: string }> = {
+  PRE_ARRIVAL: { label: 'Confirm Arrival', action: 'CONFIRM_ARRIVAL' },
+  IN_TRANSIT: { label: 'Confirm Arrival', action: 'CONFIRM_ARRIVAL' },
+  DISPATCHED: { label: 'Confirm Arrival', action: 'CONFIRM_ARRIVAL' },
+  ARRIVED: { label: 'Start Clearance', action: 'START_CLEARANCE' },
+  UNDER_CLEARANCE: { label: 'Release Cargo', action: 'RELEASE_CLEARANCE' },
+  RELEASED: { label: 'Receive Into Warehouse', action: 'RECEIVE_INTO_WAREHOUSE' },
+  WAREHOUSE: { label: 'Open Warehouse', action: 'GOTO_WAREHOUSE' },
+};
+
 const statusVariant = (s: string) => {
   switch (s) {
     case 'RELEASED': case 'DELIVERED': case 'COMPLETED': case 'CUSTOMS_CLEARED': case 'WAREHOUSE': return 'success' as const;
@@ -73,12 +85,6 @@ export default function ImportPage() {
   const router = useRouter();
   const isMobile = useMediaQuery('(max-width: 767px)');
   const [data, setData] = useState<ImportItem[]>([]);
-  const [stats, setStats] = useState<DashboardStats>({
-    preArrival: 0, terminalArrived: 0, pendingInspection: 0,
-    customsPending: 0, readyForWarehouse: 0, exceptionCount: 0,
-    customsHold: 0, totalImport: 0, releasedToday: 0,
-    manifestedCount: 0, avgProcessingTime: 0, receivedMonth: 0,
-  });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'pipeline' | 'list'>('pipeline');
@@ -102,12 +108,8 @@ export default function ImportPage() {
       const params = new URLSearchParams({ limit: '100', scope: 'import' });
       if (selectedStatus) params.set('status', selectedStatus);
       if (search) params.set('search', search);
-      const [dataRes, statsRes] = await Promise.all([
-        fetch(`/api/master-awbs?${params}`, { cache: 'no-store' }),
-        fetch('/api/dashboard/import', { cache: 'no-store' }),
-      ]);
+      const dataRes = await fetch(`/api/master-awbs?${params}`, { cache: 'no-store' });
       if (dataRes.ok) { const j = await dataRes.json(); setData(j.data || []); }
-      if (statsRes.ok) { const j = await statsRes.json(); if (j.success) setStats(j.data); }
     } catch {} finally {
       setLoading(false);
     }
@@ -126,11 +128,16 @@ export default function ImportPage() {
 
   const handleAction = async (action: string, entityId: string) => {
     try {
-      await fetch('/api/workflow', {
+      const res = await fetch('/api/workflow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ entityType: 'MasterAWB', entityId, action }),
       });
+      if (!res.ok) {
+        const j = await res.json().catch(() => null);
+        window.alert(j?.error || 'Action could not be completed');
+        return;
+      }
       fetchData();
     } catch {}
   };
@@ -446,19 +453,23 @@ export default function ImportPage() {
   };
 
   const pipelineData = useMemo(() => {
-    return PIPELINE_COLUMNS.map(col => ({
-      ...col,
-      items: data.filter(d => col.statuses.includes(d.workflowStatus)),
-      count: col.statuses.reduce((sum, s) => {
-        if (s === 'PRE_ARRIVAL') return sum + stats.preArrival;
-        if (s === 'TERMINAL_ARRIVED' || s === 'MANIFEST_VERIFIED' || s === 'MAWB_RECEIVED') return sum + (s === 'TERMINAL_ARRIVED' ? stats.terminalArrived : s === 'MANIFEST_VERIFIED' ? stats.manifestedCount : 0);
-        if (s === 'RECEIVED' || s === 'DOCUMENTS_VERIFIED' || s === 'PIECES_VERIFIED' || s === 'WEIGHT_VERIFIED' || s === 'DAMAGE_INSPECTED') return sum + (s === 'RECEIVED' ? 0 : 0);
-        if (s === 'CUSTOMS_HOLD') return sum + stats.customsHold;
-        if (s === 'EXCEPTION') return sum + stats.exceptionCount;
-        return sum;
-      }, 0) || 0,
-    }));
-  }, [data, stats]);
+    return PIPELINE_COLUMNS.map(col => {
+      const items = data.filter(d => col.statuses.includes(d.workflowStatus));
+      return { ...col, items, count: items.length };
+    });
+  }, [data]);
+
+  const stageCounts = useMemo(() => {
+    const count = (keys: string[]) => data.filter(d => keys.includes(d.workflowStatus)).length;
+    return {
+      preArrival: count(['PRE_ARRIVAL', 'IN_TRANSIT', 'DISPATCHED']),
+      arrived: count(['ARRIVED', 'TERMINAL_ARRIVED']),
+      clearance: count(['UNDER_CLEARANCE', 'RECEIVED', 'DOCUMENTS_VERIFIED', 'PIECES_VERIFIED', 'WEIGHT_VERIFIED', 'DAMAGE_INSPECTED', 'CUSTOMS_SUBMITTED', 'CUSTOMS_ASSESSED', 'CUSTOMS_PAID', 'CUSTOMS_INSPECTION']),
+      released: count(['RELEASED', 'CUSTOMS_CLEARED']),
+      warehouse: count(['WAREHOUSE', 'WAREHOUSE_RECEIVING', 'MANIFEST_VERIFIED', 'MAWB_RECEIVED']),
+      delivery: count(['DELIVERY']),
+    };
+  }, [data]);
 
   return (
     <div className="space-y-6">
@@ -482,12 +493,12 @@ export default function ImportPage() {
       />
 
       <div className="grid gap-4 sm:grid-cols-6">
-        <StatCard label="Pre-Arrival" value={stats.preArrival} icon={<Plane className="h-5 w-5" />} />
-        <StatCard label="Arriving" value={stats.terminalArrived} icon={<Truck className="h-5 w-5" />} />
-        <StatCard label="In Inspection" value={stats.pendingInspection} icon={<FileCheck className="h-5 w-5" />} />
-        <StatCard label="Customs" value={stats.customsPending} icon={<FileText className="h-5 w-5" />} />
-        <StatCard label="Exceptions" value={stats.exceptionCount} icon={<AlertTriangle className="h-5 w-5" />} />
-        <StatCard label="Avg Time" value={`${stats.avgProcessingTime}h`} icon={<Clock className="h-5 w-5" />} />
+        <StatCard label="Pre-Arrival" value={stageCounts.preArrival} icon={<Plane className="h-5 w-5" />} />
+        <StatCard label="Arrived" value={stageCounts.arrived} icon={<Truck className="h-5 w-5" />} />
+        <StatCard label="Under Clearance" value={stageCounts.clearance} icon={<FileCheck className="h-5 w-5" />} />
+        <StatCard label="Released" value={stageCounts.released} icon={<CheckCircle className="h-5 w-5" />} />
+        <StatCard label="Warehouse" value={stageCounts.warehouse} icon={<Warehouse className="h-5 w-5" />} />
+        <StatCard label="Delivery" value={stageCounts.delivery} icon={<Truck className="h-5 w-5" />} />
       </div>
 
       <div className="flex items-center gap-3">
@@ -499,8 +510,16 @@ export default function ImportPage() {
         <select value={selectedStatus || ''} onChange={e => setSelectedStatus(e.target.value || null)}
           className="flex h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
           <option value="">All Statuses</option>
-          {PIPELINE_COLUMNS.flatMap(col => col.statuses).map(s => (
-            <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+          {[
+            { v: 'PRE_ARRIVAL', l: 'Pre-Arrival' },
+            { v: 'ARRIVED', l: 'Arrived' },
+            { v: 'UNDER_CLEARANCE', l: 'Under Clearance' },
+            { v: 'RELEASED', l: 'Released' },
+            { v: 'WAREHOUSE', l: 'Warehouse' },
+            { v: 'DELIVERY', l: 'Delivery' },
+            { v: 'EXCEPTION', l: 'Exception' },
+          ].map(s => (
+            <option key={s.v} value={s.v}>{s.l}</option>
           ))}
         </select>
       </div>
@@ -533,6 +552,24 @@ export default function ImportPage() {
                       onClick={() => router.push(`/workspace/import/${item.id}`)}>
                       <p className="text-xs font-medium text-gray-900 dark:text-white truncate">{item.awbNumber}</p>
                       <p className="text-[10px] text-gray-500">{item.awbPieces} pcs · {item.awbWeight}kg</p>
+                      {(() => {
+                        const next = NEXT_STEP[item.workflowStatus as string];
+                        if (!next) return null;
+                        return (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="mt-2 h-6 w-full text-[10px]"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              if (next.action === 'GOTO_WAREHOUSE') router.push('/workspace/warehouse');
+                              else handleAction(next.action, item.id);
+                            }}
+                          >
+                            {next.label}
+                          </Button>
+                        );
+                      })()}
                     </div>
                   ))}
                   {col.items.length > 10 && (

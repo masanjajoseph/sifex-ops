@@ -165,6 +165,13 @@ export class WorkflowEngine {
       const hawbStatus = context.hawbToStatus || transition.hawbToStatus;
       const skipCascade = context.skipHouseAWBCascade || false;
 
+      if (action === "DEPART_FLIGHT" && entityType === "MasterAWB") {
+        await tx.masterAWB.update({
+          where: { id: entityId },
+          data: { departedAt: new Date() },
+        });
+      }
+
       if (action === "GENERATE_MANIFEST" && entityType === "MasterAWB") {
         const mawb = await tx.masterAWB.findUnique({
           where: { id: entityId },

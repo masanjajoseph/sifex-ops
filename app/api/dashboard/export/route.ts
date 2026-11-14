@@ -46,8 +46,18 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
     where: { departureTime: { gte: new Date(), lte: new Date(new Date().setHours(23, 59, 59, 999)) }, deletedAt: null },
   });
 
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  // Simplified export pipeline counters (ACCEPTED → ASSIGNED → MANIFESTED → LOADED → DEPARTED → IN TRANSIT)
+  const pipelineCounts = await prisma.masterAWB.groupBy({
+    by: ["workflowStatus"],
+    where: { deletedAt: null, workflowStage: WorkflowStage.EXPORT },
+    _count: { _all: true },
+  });
+  const countFor = (statuses: string[]) =>
+    pipelineCounts
+      .filter((r) => statuses.includes(r.workflowStatus))
+      .reduce((sum, r) => sum + r._count._all, 0);
 
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   const [totalRevenueMonth, avgProcessingTime, flightUtilization] = await Promise.all([
     prisma.billingRecord.aggregate({
       where: { deletedAt: null, createdAt: { gte: monthStart } },
@@ -74,6 +84,12 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   ]);
 
   return apiSuccess({
+    acceptedCount: countFor(["ACCEPTED"]),
+    assignedCount: countFor(["ASSIGNED"]),
+    manifestedCount: countFor(["MANIFESTED"]),
+    loadedCount,
+    departedCount: countFor(["DEPARTED"]),
+    inTransitCount: countFor(["IN_TRANSIT", "PRE_ARRIVAL"]),
     draftCount,
     validatedCount,
     hawbGeneratedCount,
