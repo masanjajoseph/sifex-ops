@@ -103,6 +103,47 @@ export const POST = withErrorHandler(async (req: NextRequest, { params }: { para
     }
   }
 
+  // Simplified flow: the MAWB normally stays in WAREHOUSE while each HAWB is
+  // charged individually. Payment therefore has to hand that single HAWB to
+  // delivery on its own, otherwise the delivery team never sees it.
+  if (record.houseAWBId) {
+    const existingTask = await prisma.deliveryTask.findFirst({
+      where: { houseAWBId: record.houseAWBId, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!existingTask) {
+      const hawb = await prisma.houseAWB.findUnique({
+        where: { id: record.houseAWBId },
+        include: { receiver: true },
+      });
+      const taskCount = await prisma.deliveryTask.count();
+
+      await prisma.deliveryTask.create({
+        data: {
+          taskNumber: `TASK-${String(taskCount + 1).padStart(6, "0")}`,
+          houseAWBId: record.houseAWBId,
+          masterAWBId: record.masterAWBId,
+          customerName: hawb?.receiver?.name || null,
+          deliveryAddress: hawb?.receiver?.address || null,
+          status: "WAITING_ASSIGNMENT",
+          createdById: session.user.id,
+        },
+      });
+
+      await prisma.houseAWB.update({
+        where: { id: record.houseAWBId },
+        data: {
+          billingStatus: "PAID",
+          cargoStatus: "AWAITING_DELIVERY",
+          workflowStatus: "PAID",
+          // Still in the warehouse until a rider starts the delivery.
+          workflowStage: "WAREHOUSE",
+        },
+      });
+    }
+  }
+
   await prisma.trackingEvent.create({
     data: {
       entityType: "BillingRecord",
