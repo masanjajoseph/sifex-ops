@@ -10,7 +10,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
   if (!session?.user) return apiError(new Error("Unauthorized"), 401);
 
   const awaitingStorage = await prisma.masterAWB.count({
-    where: { workflowStatus: "WAREHOUSE_RECEIVING", deletedAt: null },
+    where: { workflowStatus: { in: ["WAREHOUSE_RECEIVING", "WAREHOUSE"] }, deletedAt: null },
   });
 
   const stored = await prisma.houseAWB.count({
@@ -33,34 +33,37 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
     where: { workflowStatus: "INVOICE_GENERATED", deletedAt: null },
   });
 
-  const totalInventory = await prisma.warehouseInventory.count({
-    where: { status: { notIn: ["DISPATCHED"] }, deletedAt: null },
+  const totalInventory = await prisma.houseAWB.count({
+    where: { workflowStage: "WAREHOUSE", deletedAt: null },
   });
 
-  const [avgStorageTime, turnoverRate, totalCapacity] = await Promise.all([
-    prisma.$queryRaw`
-      SELECT AVG(EXTRACT(EPOCH FROM (COALESCE(wi.dispatched_at, NOW()) - wi.stored_at)) / 86400)::float as avg_days
-      FROM warehouse_inventories wi
-      WHERE wi.stored_at IS NOT NULL AND wi.deleted_at IS NULL
-    `.then((r: any) => {
-      const row = Array.isArray(r) ? r[0] : r;
-      return row?.avg_days ? Math.round(row.avg_days * 100) / 100 : 0;
-    }),
-    prisma.$queryRaw`
-      SELECT
-        (COUNT(*) FILTER (WHERE status = 'DISPATCHED')::float /
-          NULLIF(COUNT(*)::float, 0)) * 100 as rate
-      FROM warehouse_inventories
-      WHERE deleted_at IS NULL
-    `.then((r: any) => {
-      const row = Array.isArray(r) ? r[0] : r;
-      return row?.rate ? Math.round(row.rate * 100) / 100 : 0;
-    }),
-    prisma.warehouseZone.aggregate({
-      where: { isActive: true },
-      _sum: { capacity: true },
-    }).then(r => r._sum.capacity || 0),
-  ]);
+  // Storage-age metrics are derived from the HAWBs currently sitting in the
+  // warehouse (the legacy warehouse_inventories table no longer exists).
+  const warehouseHawbs = await prisma.houseAWB.findMany({
+    where: { workflowStage: "WAREHOUSE", deletedAt: null },
+    select: { createdAt: true, updatedAt: true },
+  });
+  const now = Date.now();
+  const avgStorageTime = warehouseHawbs.length
+    ? Math.round(
+        (warehouseHawbs.reduce((sum, h) => sum + (now - new Date(h.createdAt).getTime()), 0) /
+          warehouseHawbs.length /
+          86_400_000) * 100,
+      ) / 100
+    : 0;
+  const dispatchedToday = await prisma.houseAWB.count({
+    where: {
+      workflowStage: "DELIVERY",
+      updatedAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+      deletedAt: null,
+    },
+  });
+  const turnoverRate = totalInventory + dispatchedToday > 0
+    ? Math.round((dispatchedToday / (totalInventory + dispatchedToday)) * 10000) / 100
+    : 0;
+  const totalCapacity = await prisma.warehouseZone
+    .aggregate({ where: { isActive: true }, _sum: { capacity: true } })
+    .then((r) => r._sum.capacity || 0);
 
   return apiSuccess({
     awaitingStorage,
