@@ -2,6 +2,7 @@ import { eventBus, createEvent, EventType } from "@/lib/events";
 import { Prisma } from "@prisma/client";
 import { CargoStatus } from "@/types/cargo-domain";
 import { enqueueEvent } from "./queue";
+import { toTcraTimestamp } from "./time";
 import { TcraOperationCode, TcraStatusCode, TCRA_OPERATOR_CODE } from "./types";
 
 const STATUS_MAP: Partial<Record<CargoStatus, { operationCode: TcraOperationCode; status: TcraStatusCode }>> = {
@@ -20,8 +21,7 @@ const STATUS_MAP: Partial<Record<CargoStatus, { operationCode: TcraOperationCode
 };
 
 function toIsoLocal(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${String(date.getMilliseconds()).padStart(3, "0")}`;
+  return toTcraTimestamp(date);
 }
 
 let serialCounter = 0;
