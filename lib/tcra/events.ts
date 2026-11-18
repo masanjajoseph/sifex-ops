@@ -4,6 +4,7 @@ import { CargoStatus } from "@/types/cargo-domain";
 import { enqueueEvent } from "./queue";
 import { toTcraTimestamp } from "./time";
 import { normalizeTzRegion } from "./tz-regions";
+import { countryOfLocation, toTcraLocation } from "./locations";
 import { TcraOperationCode, TcraStatusCode, TCRA_OPERATOR_CODE } from "./types";
 
 const STATUS_MAP: Partial<Record<CargoStatus, { operationCode: TcraOperationCode; status: TcraStatusCode }>> = {
@@ -53,6 +54,12 @@ export function subscribeToEvents() {
         ? destinationRegion ?? "Unknown"
         : normalizeTzRegion(destinationRegion) ?? "Unknown";
 
+    // TCRA does not accept company/branch wording in locations: stations are
+    // rendered as "COUNTRY - City" (e.g. "CN - Guangzhou", "TZ - Dar es salaam").
+    const resolvedPostedBranch = toTcraLocation(postedBranch);
+    const resolvedDestinationBranch = toTcraLocation(destinationBranch);
+    const resolvedPostedRegion = postedRegion ?? countryOfLocation(resolvedPostedBranch) ?? "Unknown";
+
     await enqueueEvent({
       houseAWBId: houseAWBId as string,
       trackingNumber: trackingNumber as string,
@@ -69,9 +76,9 @@ export function subscribeToEvents() {
             txnInfo: {
               eventTimestamp: timestamp,
               trackingNumber,
-              postedBranch: postedBranch ?? "Unknown",
-              postedRegion: postedRegion ?? "Unknown",
-              destinationBranch: destinationBranch ?? "Unknown",
+              postedBranch: resolvedPostedBranch,
+              postedRegion: resolvedPostedRegion,
+              destinationBranch: resolvedDestinationBranch,
               destinationRegion: resolvedDestinationRegion,
               locality: eventLocality,
               serviceCode: serviceCode ?? "S01",
