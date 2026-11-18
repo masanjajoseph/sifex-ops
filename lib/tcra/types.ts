@@ -11,6 +11,8 @@ export enum TcraOperationCode {
 }
 
 // Values match the TCRA OpenAPI enum exactly (case-sensitive).
+// Verified against the live gateway on 2026-11-18: "Accepted" returns RC00,
+// while lowercase "accepted" makes the gateway fail with HTTP 500 (empty body).
 export enum TcraStatusCode {
   ACCEPTED = "Accepted",
   DISPATCHED = "Dispatched",

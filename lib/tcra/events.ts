@@ -3,8 +3,7 @@ import { Prisma } from "@prisma/client";
 import { CargoStatus } from "@/types/cargo-domain";
 import { enqueueEvent } from "./queue";
 import { toTcraTimestamp } from "./time";
-import { normalizeTzRegion } from "./tz-regions";
-import { countryOfLocation, toTcraLocation } from "./locations";
+import { resolveTcraEventGeography, type TcraEventGeography } from "./locations";
 import { TcraOperationCode, TcraStatusCode, TCRA_OPERATOR_CODE } from "./types";
 
 const STATUS_MAP: Partial<Record<CargoStatus, { operationCode: TcraOperationCode; status: TcraStatusCode }>> = {
@@ -35,7 +34,7 @@ function nextSerial(): string {
 
 export function subscribeToEvents() {
   eventBus.subscribe(EventType.SHIPMENT_STATUS_CHANGED, async (event) => {
-    const { trackingNumber, cargoStatus, postedBranch, postedRegion, destinationBranch, destinationRegion, locality, serviceCode, serviceTypeCode, charges } = event.payload as Record<string, any>;
+    const { trackingNumber, cargoStatus, postedBranch, destinationBranch, locality, serviceCode, serviceTypeCode, charges } = event.payload as Record<string, any>;
     const houseAWBId = event.aggregateId;
 
     const mapped = STATUS_MAP[cargoStatus as CargoStatus];
@@ -45,20 +44,14 @@ export function subscribeToEvents() {
     const timestamp = toIsoLocal(now);
     const msgId = `${TCRA_OPERATOR_CODE}-${timestamp}-${mapped.operationCode}-${nextSerial()}`;
 
-    const eventLocality = locality ?? "local";
-    // Incoming and local shipments are delivered inside Tanzania, so the
-    // destination region must be one of the TISP region names. Foreign
-    // destinations (international_outgoing) are left untouched.
-    const resolvedDestinationRegion =
-      eventLocality === "international_outgoing"
-        ? destinationRegion ?? "Unknown"
-        : normalizeTzRegion(destinationRegion) ?? "Unknown";
-
-    // TCRA does not accept company/branch wording in locations: stations are
-    // rendered as "COUNTRY - City" (e.g. "CN - Guangzhou", "TZ - Dar es salaam").
-    const resolvedPostedBranch = toTcraLocation(postedBranch);
-    const resolvedDestinationBranch = toTcraLocation(destinationBranch);
-    const resolvedPostedRegion = postedRegion ?? countryOfLocation(resolvedPostedBranch) ?? "Unknown";
+    // Geographical values are derived from the AWB stations:
+    //   postedBranch      -> city only ("Guangzhou")
+    //   postedRegion      -> ISO country ("CN")
+    //   destinationBranch -> TISP area_name when the destination is Tanzania
+    //                        ("Dar-es-salaam", "Mjini Magharibi", ...)
+    //   destinationRegion -> ISO country ("TZ")
+    const geo = resolveTcraEventGeography({ postedBranch, destinationBranch });
+    const eventLocality = locality ?? inferLocality(geo);
 
     await enqueueEvent({
       houseAWBId: houseAWBId as string,
@@ -76,10 +69,10 @@ export function subscribeToEvents() {
             txnInfo: {
               eventTimestamp: timestamp,
               trackingNumber,
-              postedBranch: resolvedPostedBranch,
-              postedRegion: resolvedPostedRegion,
-              destinationBranch: resolvedDestinationBranch,
-              destinationRegion: resolvedDestinationRegion,
+              postedBranch: geo.postedBranch,
+              postedRegion: geo.postedRegion,
+              destinationBranch: geo.destinationBranch,
+              destinationRegion: geo.destinationRegion,
               locality: eventLocality,
               serviceCode: serviceCode ?? "S01",
               serviceTypeCode: serviceTypeCode ?? "ST01",
@@ -91,6 +84,12 @@ export function subscribeToEvents() {
       } as Prisma.InputJsonValue,
     });
   });
+}
+
+function inferLocality(geo: TcraEventGeography): "international_incoming" | "international_outgoing" | "local" {
+  if (geo.postedRegion === "Unknown" || geo.destinationRegion === "Unknown") return "local";
+  if (geo.postedRegion === geo.destinationRegion) return "local";
+  return geo.destinationRegion === "TZ" ? "international_incoming" : "international_outgoing";
 }
 
 export function triggerTcraEvent(
