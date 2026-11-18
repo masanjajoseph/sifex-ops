@@ -68,7 +68,16 @@ class EventBus {
   }
 }
 
-export const eventBus = new EventBus();
+export const eventBus: EventBus = (() => {
+  // Next.js compiles instrumentation and route handlers into separate bundles.
+  // Keeping the bus on globalThis guarantees that a subscriber registered at
+  // startup receives events published from any route handler.
+  const globalForEvents = globalThis as unknown as { __sifexEventBus?: EventBus };
+  if (!globalForEvents.__sifexEventBus) {
+    globalForEvents.__sifexEventBus = new EventBus();
+  }
+  return globalForEvents.__sifexEventBus;
+})();
 
 let idCounter = 0;
 

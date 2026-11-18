@@ -126,6 +126,7 @@ export async function publishTcraEventsForHouseAWBs(houseAWBIds: string[]): Prom
 
       triggerTcraEvent(hawb.id, hawb.trackingNumber, cargoStatus as unknown as CargoStatus, extra);
       published += 1;
+      console.log(`[TCRA] Queued ${cargoStatus} event for ${hawb.trackingNumber}`);
     } catch (error) {
       console.error(`[TCRA] Failed to queue event for ${hawb.trackingNumber}:`, error);
     }
