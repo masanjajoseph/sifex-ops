@@ -25,9 +25,24 @@ export async function enqueueEvent(params: EnqueueEventParams) {
 
   // Flush immediately so the event does not sit in the outbox until the next
   // scheduler tick. Failures stay PENDING and are retried by the scheduler.
-  void processPendingEvents(5).catch((error) => {
+  void flushOutbox().catch((error) => {
     console.error("[TCRA] Immediate outbox flush failed:", error);
   });
+}
+
+/**
+ * Consecutive events for the same shipment are enqueued while the previous
+ * flush is still running. Each sweep re-reads the outbox, so a follow-up sweep
+ * picks up rows created during the join, instead of waiting for the scheduler.
+ */
+async function flushOutbox(batchSize = 5, maxSweeps = 3): Promise<number> {
+  let total = 0;
+  for (let sweep = 0; sweep < maxSweeps; sweep += 1) {
+    const processed = await processPendingEvents(batchSize);
+    total += processed;
+    if (processed < batchSize) return total;
+  }
+  return total;
 }
 
 let processing: Promise<number> | null = null;
