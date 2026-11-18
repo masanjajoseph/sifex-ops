@@ -109,13 +109,22 @@ export async function publishTcraEventsForHouseAWBs(houseAWBIds: string[]): Prom
     try {
       if (await alreadyPublished(hawb.id, cargoStatus)) continue;
 
-      triggerTcraEvent(hawb.id, hawb.trackingNumber, cargoStatus as unknown as CargoStatus, {
+      const extra = {
         postedBranch: origin,
         destinationBranch: destination,
         serviceCode: DEFAULT_SERVICE_CODE,
         serviceTypeCode: DEFAULT_SERVICE_TYPE_CODE,
         charges: buildCharges(hawb.billingRecords[0]),
-      });
+      };
+
+      // House AWBs are created before they are consolidated, so the first TCRA
+      // event they can carry is the assignment (RCS). Report the acceptance
+      // (OT01) first, once, so the gateway sees a complete lifecycle.
+      if (cargoStatus === CargoStatus.RCS && !(await alreadyPublished(hawb.id, CargoStatus.ACCEPTED))) {
+        triggerTcraEvent(hawb.id, hawb.trackingNumber, CargoStatus.ACCEPTED, extra);
+      }
+
+      triggerTcraEvent(hawb.id, hawb.trackingNumber, cargoStatus as unknown as CargoStatus, extra);
       published += 1;
     } catch (error) {
       console.error(`[TCRA] Failed to queue event for ${hawb.trackingNumber}:`, error);
