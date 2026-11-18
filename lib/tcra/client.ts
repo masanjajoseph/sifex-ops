@@ -3,6 +3,47 @@ import { URL } from "node:url";
 import { TCRA_BASE_URL, type TcraEventRequest, type TcraEventResponse, type TcraSnapshotRequest, type TcraSnapshotResponse } from "./types";
 import { createAuthHeader, signPayloadSha1 } from "./signing";
 
+/**
+ * Serialise an event request in the exact field order TCRA expects.
+ *
+ * TCRA re-serialises every event into its own struct before verifying the RSA
+ * signature. Any other order produces `RC02 "NOT VERIFIED"` even though the
+ * signature over the transmitted bytes is correct. Outbox payloads live in a
+ * Postgres `jsonb` column, which does not preserve key order, so the body has
+ * to be rebuilt here — immediately before signing — instead of being sent as
+ * it comes back from the database.
+ */
+export function serializeEventRequest(req: TcraEventRequest): string {
+  const eventsList = (req?.eventsList ?? []).map((event) => ({
+    msgInfo: {
+      timestamp: event.msgInfo.timestamp,
+      msgId: event.msgInfo.msgId,
+      operationCode: event.msgInfo.operationCode,
+      operatorCode: event.msgInfo.operatorCode,
+      ...(event.msgInfo.operationType ? { operationType: event.msgInfo.operationType } : {}),
+    },
+    txnInfo: {
+      eventTimestamp: event.txnInfo.eventTimestamp,
+      trackingNumber: event.txnInfo.trackingNumber,
+      postedBranch: event.txnInfo.postedBranch,
+      postedRegion: event.txnInfo.postedRegion,
+      destinationBranch: event.txnInfo.destinationBranch,
+      destinationRegion: event.txnInfo.destinationRegion,
+      locality: event.txnInfo.locality,
+      serviceCode: event.txnInfo.serviceCode,
+      serviceTypeCode: event.txnInfo.serviceTypeCode,
+      status: event.txnInfo.status,
+      charges: (event.txnInfo.charges ?? []).map((charge) => ({
+        chargeType: charge.chargeType,
+        currency: charge.currency,
+        amount: charge.amount,
+      })),
+    },
+  }));
+
+  return JSON.stringify({ eventsList });
+}
+
 interface TcraClientOptions {
   baseUrl?: string;
   timeout?: number;
@@ -101,8 +142,7 @@ export function createTcraClient(opts?: TcraClientOptions) {
     return { Authorization: await createAuthHeader(payload) };
   }
 
-  async function send(path: string, body: unknown): Promise<TcraHttpResponse> {
-    const payload = JSON.stringify(body);
+  async function send(path: string, payload: string): Promise<TcraHttpResponse> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       ...(await authHeaders(payload)),
@@ -116,7 +156,7 @@ export function createTcraClient(opts?: TcraClientOptions) {
   }
 
   async function pushEvents(events: TcraEventRequest): Promise<TcraEventResponse> {
-    const res = await send("/v1/api/events", events);
+    const res = await send("/v1/api/events", serializeEventRequest(events));
     if (!res.ok) {
       throw new Error(`TCRA events API error: ${res.status} ${res.statusText} ${res.body.slice(0, 300)}`);
     }
@@ -124,7 +164,9 @@ export function createTcraClient(opts?: TcraClientOptions) {
   }
 
   async function pushSnapshot(req: TcraSnapshotRequest): Promise<TcraSnapshotResponse> {
-    const res = await send("/v1/api/snapshot", req);
+    // The caller builds this request with the field order TCRA expects; do not
+    // rebuild it from a database value.
+    const res = await send("/v1/api/snapshot", JSON.stringify(req));
     if (!res.ok) {
       throw new Error(`TCRA snapshot API error: ${res.status} ${res.statusText} ${res.body.slice(0, 300)}`);
     }
