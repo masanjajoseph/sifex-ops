@@ -15,11 +15,15 @@ function nextSerial(): string {
 
 /**
  * Collect the msgIds of the events that TCRA already acknowledged (RC00) in
- * the given window. The snapshot is a reconciliation request: it has to
- * reference the exact msgIds that were sent to /v1/api/events, otherwise
- * TCRA has nothing to reconcile against.
+ * the given window, for one operation only. The snapshot is a reconciliation
+ * request per operation type: an "accepted" snapshot must not mix in dispatched
+ * events, so the caller passes the operation it is reconciling.
  */
-async function collectSentMsgIds(dateFrom: Date, dateTo: Date): Promise<string[]> {
+async function collectSentMsgIds(
+  dateFrom: Date,
+  dateTo: Date,
+  operation: TcraOperationCode,
+): Promise<string[]> {
   const rows = await prisma.tcraOutbox.findMany({
     where: {
       status: "SENT",
@@ -31,9 +35,13 @@ async function collectSentMsgIds(dateFrom: Date, dateTo: Date): Promise<string[]
 
   const msgIds: string[] = [];
   for (const row of rows) {
-    const payload = row.payload as { eventsList?: { msgInfo?: { msgId?: string } }[] } | null;
+    const payload = row.payload as
+      | { eventsList?: { msgInfo?: { msgId?: string; operationCode?: string } }[] }
+      | null;
     for (const event of payload?.eventsList ?? []) {
-      const msgId = event?.msgInfo?.msgId;
+      // The snapshot only lists the messages of the operation it covers.
+      if (event?.msgInfo?.operationCode !== operation) continue;
+      const msgId = event.msgInfo.msgId;
       if (typeof msgId === "string" && msgId.length > 0 && !msgIds.includes(msgId)) {
         msgIds.push(msgId);
       }
@@ -42,8 +50,21 @@ async function collectSentMsgIds(dateFrom: Date, dateTo: Date): Promise<string[]
   return msgIds;
 }
 
-export async function sendDailySnapshot(dateFrom: Date, dateTo: Date) {
-  const msgIds = await collectSentMsgIds(dateFrom, dateTo);
+/**
+ * Daily snapshot for one operation type.
+ *
+ * Per the TCRA technical specification, the `msgId` always ends with the
+ * snapshot operation code (`OT06`), while `operationCode` identifies the
+ * operation of the shipments being reconciled — `OT01` for today's accepted
+ * shipments, `OT02` for dispatched, and so on. Sending `OT06` in
+ * `operationCode` is reported by TCRA as a wrong operation type.
+ */
+export async function sendDailySnapshot(
+  dateFrom: Date,
+  dateTo: Date,
+  operation: TcraOperationCode = TcraOperationCode.ACCEPTANCE,
+) {
+  const msgIds = await collectSentMsgIds(dateFrom, dateTo, operation);
 
   const now = new Date();
   const timestamp = toIsoLocal(now);
@@ -57,9 +78,9 @@ export async function sendDailySnapshot(dateFrom: Date, dateTo: Date) {
     msgInfo: {
       timestamp,
       msgId,
-      operationCode: TcraOperationCode.SNAPSHOT,
+      operationCode: operation,
       operatorCode: TCRA_OPERATOR_CODE,
-      operationType: TcraOperationCode.SNAPSHOT,
+      operationType: operation,
     },
     txnInfo: msgIds.map((id) => ({ msgId: id })),
   };
