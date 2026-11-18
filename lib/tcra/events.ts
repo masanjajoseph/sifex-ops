@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { CargoStatus } from "@/types/cargo-domain";
 import { enqueueEvent } from "./queue";
 import { toTcraTimestamp } from "./time";
+import { normalizeTzRegion } from "./tz-regions";
 import { TcraOperationCode, TcraStatusCode, TCRA_OPERATOR_CODE } from "./types";
 
 const STATUS_MAP: Partial<Record<CargoStatus, { operationCode: TcraOperationCode; status: TcraStatusCode }>> = {
@@ -43,6 +44,15 @@ export function subscribeToEvents() {
     const timestamp = toIsoLocal(now);
     const msgId = `${TCRA_OPERATOR_CODE}-${timestamp}-${mapped.operationCode}-${nextSerial()}`;
 
+    const eventLocality = locality ?? "local";
+    // Incoming and local shipments are delivered inside Tanzania, so the
+    // destination region must be one of the TISP region names. Foreign
+    // destinations (international_outgoing) are left untouched.
+    const resolvedDestinationRegion =
+      eventLocality === "international_outgoing"
+        ? destinationRegion ?? "Unknown"
+        : normalizeTzRegion(destinationRegion) ?? "Unknown";
+
     await enqueueEvent({
       houseAWBId: houseAWBId as string,
       trackingNumber: trackingNumber as string,
@@ -62,8 +72,8 @@ export function subscribeToEvents() {
               postedBranch: postedBranch ?? "Unknown",
               postedRegion: postedRegion ?? "Unknown",
               destinationBranch: destinationBranch ?? "Unknown",
-              destinationRegion: destinationRegion ?? "Unknown",
-              locality: locality ?? "local",
+              destinationRegion: resolvedDestinationRegion,
+              locality: eventLocality,
               serviceCode: serviceCode ?? "S01",
               serviceTypeCode: serviceTypeCode ?? "ST01",
               status: mapped.status,
