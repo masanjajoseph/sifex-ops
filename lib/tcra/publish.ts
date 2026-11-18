@@ -9,7 +9,7 @@ import type { TcraCharge } from "./types";
  *   RCS       -> OT02 (dispatch)
  *   DELIVERED -> OT04 (delivery)
  */
-const TCRA_CARGO_STATUSES = new Set<CargoStatus>([
+const TCRA_CARGO_STATUSES = new Set<string>([
   CargoStatus.ACCEPTED,
   CargoStatus.RCS,
   CargoStatus.DELIVERED,
@@ -52,7 +52,7 @@ function buildCharges(
  * (for example RCS via ASSIGNED, HAWB_GENERATED, MAWB_ASSIGNED, ...). Publish
  * each status once per house AWB; failed rows are ignored so a retry is allowed.
  */
-async function alreadyPublished(houseAWBId: string, status: CargoStatus): Promise<boolean> {
+async function alreadyPublished(houseAWBId: string, status: string): Promise<boolean> {
   const rows = await prisma.tcraOutbox.findMany({
     where: { houseAWBId, status: { in: ["PENDING", "SENT"] } },
     orderBy: { createdAt: "desc" },
@@ -98,7 +98,8 @@ export async function publishTcraEventsForHouseAWBs(houseAWBIds: string[]): Prom
   let published = 0;
 
   for (const hawb of hawbs) {
-    if (!TCRA_CARGO_STATUSES.has(hawb.cargoStatus)) continue;
+    const cargoStatus = hawb.cargoStatus as string;
+    if (!TCRA_CARGO_STATUSES.has(cargoStatus)) continue;
 
     const origin = stationLabel(hawb.masterAWB?.originStation);
     const destination = stationLabel(hawb.masterAWB?.destinationStation);
@@ -106,9 +107,9 @@ export async function publishTcraEventsForHouseAWBs(houseAWBIds: string[]): Prom
     if (!origin || !destination) continue;
 
     try {
-      if (await alreadyPublished(hawb.id, hawb.cargoStatus)) continue;
+      if (await alreadyPublished(hawb.id, cargoStatus)) continue;
 
-      triggerTcraEvent(hawb.id, hawb.trackingNumber, hawb.cargoStatus, {
+      triggerTcraEvent(hawb.id, hawb.trackingNumber, cargoStatus as unknown as CargoStatus, {
         postedBranch: origin,
         destinationBranch: destination,
         serviceCode: DEFAULT_SERVICE_CODE,
