@@ -3,4 +3,5 @@ export * from "./signing";
 export * from "./client";
 export * from "./queue";
 export * from "./events";
+export * from "./publish";
 export * from "./snapshot";

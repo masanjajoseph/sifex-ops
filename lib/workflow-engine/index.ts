@@ -9,6 +9,7 @@ import { getModuleForStatus, findTransition, WORKFLOW_DEFINITIONS, getHawbTarget
 import { WorkflowModule, WorkflowContext, WorkflowResult } from "./types";
 import { sendCrossModuleNotification } from "@/lib/notifications";
 import { enqueueEntity } from "@/lib/queue-engine";
+import { publishTcraEventsForHouseAWBs } from "@/lib/tcra/publish";
 import { startSLATracking, completeSLATracking } from "@/lib/sla-engine";
 import { evaluateRulesForWorkflowTransition } from "@/lib/rules-engine";
 import { createActivityFeedEntry } from "@/lib/activity-feed";
@@ -592,7 +593,49 @@ export class WorkflowEngine {
       };
     }, { maxWait: 10000, timeout: 30000 });
 
+    // TCRA reporting runs after the transition is committed so a gateway
+    // problem can never roll back or block the operational workflow.
+    try {
+      const hawbIds = await this.collectTcraHouseAWBIds(entityType, entityId, context);
+      if (hawbIds.length > 0) {
+        await publishTcraEventsForHouseAWBs(hawbIds);
+      }
+    } catch (error) {
+      console.error("[TCRA] Post-transition event queue failed:", error);
+    }
+
     return result;
+  }
+
+  /** House AWBs affected by a transition, for TCRA reporting. */
+  private async collectTcraHouseAWBIds(
+    entityType: string,
+    entityId: string,
+    context: WorkflowContext,
+  ): Promise<string[]> {
+    if (entityType === "HouseAWB") return [entityId];
+
+    if (entityType === "MasterAWB") {
+      const where: { masterAWBId: string; deletedAt: null; id?: { in: string[] } } = {
+        masterAWBId: entityId,
+        deletedAt: null,
+      };
+      if (context.relatedHaWbIds && context.relatedHaWbIds.length > 0) {
+        where.id = { in: context.relatedHaWbIds };
+      }
+      const rows = await prisma.houseAWB.findMany({ where, select: { id: true } });
+      return rows.map((row) => row.id);
+    }
+
+    if (entityType === "DeliveryTask") {
+      const task = await prisma.deliveryTask.findUnique({
+        where: { id: entityId },
+        select: { houseAWBId: true },
+      });
+      return task?.houseAWBId ? [task.houseAWBId] : [];
+    }
+
+    return [];
   }
 
   private async checkPermission(userId: string, permission: string): Promise<boolean> {

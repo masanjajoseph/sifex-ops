@@ -12,6 +12,14 @@ export async function register() {
   registerCargoEventHandlers();
   subscribeToEvents();
 
+  // Safety net for the TCRA outbox: events are flushed immediately on enqueue,
+  // this interval retries anything left after a restart or network failure.
+  const { processPendingEvents } = await import("@/lib/tcra/queue");
+  const tcraTimer = setInterval(() => {
+    void processPendingEvents().catch((error) => console.error("[TCRA] Outbox flush failed:", error));
+  }, 120_000);
+  (tcraTimer as { unref?: () => void }).unref?.();
+
   // Load TCRA key material when configured (used for signature verification /
   // legacy signature auth). JWT bearer auth uses TCRA_API_TOKEN instead.
   if (env.TCRA_PRIVATE_KEY && env.TCRA_PUBLIC_KEY) {

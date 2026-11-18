@@ -22,9 +22,29 @@ export async function enqueueEvent(params: EnqueueEventParams) {
       status: "PENDING",
     },
   });
+
+  // Flush immediately so the event does not sit in the outbox until the next
+  // scheduler tick. Failures stay PENDING and are retried by the scheduler.
+  void processPendingEvents(5).catch((error) => {
+    console.error("[TCRA] Immediate outbox flush failed:", error);
+  });
 }
 
-export async function processPendingEvents(batchSize = 20) {
+let processing: Promise<number> | null = null;
+
+/**
+ * Sends pending outbox rows. Concurrent callers share one run so the same row
+ * is never transmitted twice.
+ */
+export function processPendingEvents(batchSize = 20): Promise<number> {
+  if (processing) return processing;
+  processing = runPendingEvents(batchSize).finally(() => {
+    processing = null;
+  });
+  return processing;
+}
+
+async function runPendingEvents(batchSize: number): Promise<number> {
   const pending = await prisma.tcraOutbox.findMany({
     where: { status: "PENDING" },
     take: batchSize,
