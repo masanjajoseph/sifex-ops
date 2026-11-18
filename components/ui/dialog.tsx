@@ -62,10 +62,17 @@ function DialogTrigger({ asChild, children, ...props }: { asChild?: boolean; chi
 function DialogContent({ className, children, ...props }: { className?: string; children: React.ReactNode }) {
   const { open, onOpenChange } = React.useContext(DialogContext);
   const [mounted, setMounted] = React.useState(false);
+  const contentRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Always start a freshly opened dialog at the top, even when the previously
+  // focused element was further down the page.
+  React.useEffect(() => {
+    if (open && contentRef.current) contentRef.current.scrollTop = 0;
+  }, [open]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -89,6 +96,9 @@ function DialogContent({ className, children, ...props }: { className?: string; 
         onClick={() => onOpenChange(false)}
       />
       <div
+        ref={contentRef}
+        role="dialog"
+        aria-modal="true"
         className={cn(
           'relative z-50 mx-auto max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-800 dark:bg-gray-900',
           className
