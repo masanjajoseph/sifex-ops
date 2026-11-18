@@ -28,7 +28,12 @@ const KNOWN_LOCATIONS: KnownLocation[] = [
   { country: "HK", city: "Hong Kong", codes: ["HKG", "HK"], pattern: /hong\s*kong/i },
   { country: "AE", city: "Dubai", codes: ["DXB", "DUBAI"], pattern: /dubai/i },
   { country: "AE", city: "Sharjah", codes: ["SHJ"], pattern: /sharjah/i },
-  { country: "TZ", city: "Dar es salaam", codes: ["DAR", "DARES", "TZ-02"], pattern: /dar[\s-]*es[\s-]*salaam|dar\b/i },
+  {
+    country: "TZ",
+    city: "Dar es salaam",
+    codes: ["DAR", "DARES", "TZ-02"],
+    pattern: /dar[\s-]*es[\s-]*salaam|dar\b|kariakoo|ilala|kinondoni|temeke|^main$/i,
+  },
   { country: "TZ", city: "Zanzibar", codes: ["ZNZ", "TZ-06"], pattern: /zanzibar/i },
   { country: "TZ", city: "Dodoma", codes: ["DOD", "DODOMA"], pattern: /dodoma|msalato|mtumba/i },
   { country: "TZ", city: "Arusha", codes: ["ARK", "JRO"], pattern: /arusha/i },
@@ -47,32 +52,27 @@ const ALREADY_FORMATTED = /^[A-Z]{2}\s*-\s*\S/;
 const COMPANY_OR_BRANCH_WORDS =
   /\b(sifex|sifongo|freight|logistics|branch|station|office|warehouse|hub|depot)\b/gi;
 
-function titleCase(value: string) {
-  return value
-    .toLowerCase()
-    .split(/\s+/)
-    .map((word) => (word.length <= 2 ? word : word[0].toUpperCase() + word.slice(1)))
-    .join(" ");
-}
-
 export function toTcraLocation(value: string | null | undefined): string {
   const raw = (value ?? "").trim();
   if (!raw) return "Unknown";
 
-  if (ALREADY_FORMATTED.test(raw)) {
-    const [country, ...rest] = raw.split("-");
-    return `${country.trim()} - ${titleCase(rest.join("-").trim())}`;
-  }
-
+  // Known stations/cities win, so the canonical spelling is stable
+  // ("TZ - Dar es salaam", not "TZ - Dar es Salaam").
+  const probe = raw.replace(COMPANY_OR_BRANCH_WORDS, " ").replace(/\s+/g, " ").trim();
   for (const loc of KNOWN_LOCATIONS) {
-    if (loc.pattern.test(raw)) return `${loc.country} - ${loc.city}`;
-    if (loc.codes.some((code) => new RegExp(`(^|[^A-Za-z])${code}([^A-Za-z]|$)`, "i").test(raw))) {
+    if (loc.pattern.test(probe)) return `${loc.country} - ${loc.city}`;
+    if (loc.codes.some((code) => new RegExp(`(^|[^A-Za-z])${code}([^A-Za-z]|$)`, "i").test(probe))) {
       return `${loc.country} - ${loc.city}`;
     }
   }
 
-  const cleaned = raw.replace(COMPANY_OR_BRANCH_WORDS, " ").replace(/\s+/g, " ").trim();
-  return cleaned || "Unknown";
+  if (ALREADY_FORMATTED.test(raw)) {
+    const [country, ...rest] = raw.split("-");
+    const city = rest.join("-").trim();
+    return city ? `${country.trim()} - ${city}` : `${country.trim()} - Unknown`;
+  }
+
+  return probe || "Unknown";
 }
 
 /** ISO 3166-1 alpha-2 country code implied by a location string, if known. */
