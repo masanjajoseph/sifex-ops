@@ -63,16 +63,44 @@ export async function signPayloadSha1(payload: string): Promise<string> {
   return sign.sign(key, "base64");
 }
 
+/**
+ * Verify an inbound signature.
+ *
+ * TCRA's own documentation does not pin the digest algorithm for callbacks, so
+ * every digest used by their Java stack is accepted (SHA1withRSA is what their
+ * gateway expects from us). The key is the one configured for TCRA or, when
+ * only the certificate file is present, the public key inside that certificate.
+ */
 export async function verifySignature(
   payload: string,
   signature: string,
   key?: string
 ): Promise<boolean> {
   await ensureCrypto();
-  const verify = _createVerify!("SHA256");
-  verify.update(payload);
-  verify.end();
-  return verify.verify(key ?? getPublicKey(), signature, "base64");
+  const pem = key ?? (await resolvePublicKey());
+
+  for (const algorithm of ["RSA-SHA256", "RSA-SHA1", "RSA-SHA512"]) {
+    try {
+      const verify = _createVerify!(algorithm);
+      verify.update(payload);
+      verify.end();
+      if (verify.verify(pem, signature, "base64")) return true;
+    } catch {
+      // Malformed signature or unsupported key; try the next algorithm.
+    }
+  }
+  return false;
+}
+
+async function resolvePublicKey(): Promise<string> {
+  if (publicKey) return publicKey;
+  const certPath = process.env.TCRA_CERT_PATH;
+  if (!certPath) throw new Error("TCRA public key not configured");
+  const fs = await import("fs/promises");
+  const pem = await fs.readFile(certPath, "utf8");
+  const { X509Certificate } = await import("crypto");
+  publicKey = new X509Certificate(pem).publicKey.export({ type: "spki", format: "pem" }).toString();
+  return publicKey;
 }
 
 export async function createAuthHeader(payload: string): Promise<string> {
