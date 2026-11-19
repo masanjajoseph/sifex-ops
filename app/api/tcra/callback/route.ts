@@ -50,13 +50,31 @@ export async function POST(request: NextRequest) {
     }
 
     const data = JSON.parse(body);
-    const { msgInfo, missingMsgIds } = data;
-    const missingCount = Array.isArray(missingMsgIds) ? missingMsgIds.length : 0;
-    console.info(`[tcra:callback] msgId=${msgInfo?.msgId ?? "-"} missing=${missingCount} body=${preview}`);
+    const { msgInfo } = data;
+
+    // TCRA sends the missing references in one of two shapes:
+    //   { "missingMsgIds": [...] }                  (technical spec sample)
+    //   { "txnInfo": { "missingMsgIds": [...] } }   (observed live 2026-11-19)
+    // Accept both so a real gap is never reported as success.
+    const rawMissing = data.missingMsgIds ?? data.txnInfo?.missingMsgIds;
+    const missingMsgIds: { msgId: string }[] = Array.isArray(rawMissing)
+      ? rawMissing
+          .map((entry: unknown) =>
+            typeof entry === "string"
+              ? { msgId: entry }
+              : { msgId: (entry as { msgId?: unknown })?.msgId }
+          )
+          .filter((entry): entry is { msgId: string } => typeof entry.msgId === "string" && entry.msgId.length > 0)
+      : [];
+    const missingCount = missingMsgIds.length;
+    const callbackMsgId = msgInfo?.callbackMsgId ?? "-";
+    console.info(
+      `[tcra:callback] msgId=${msgInfo?.msgId ?? "-"} op=${msgInfo?.operationCode ?? "-"} callbackMsgId=${callbackMsgId} missing=${missingCount} body=${preview}`,
+    );
 
     const found: { msgId: string }[] = [];
 
-    for (const item of missingMsgIds ?? []) {
+    for (const item of missingMsgIds) {
       if (typeof item?.msgId !== "string" || item.msgId.length === 0) continue;
       // The events we sent live in the outbox, not in the tracking timeline.
       const exists = await prisma.tcraOutbox.findFirst({
@@ -80,7 +98,7 @@ export async function POST(request: NextRequest) {
         code: TcraResponseCode.OK,
         txnId: `ack-${timestamp}-${Math.random().toString(36).slice(2, 8)}`,
         message: found.length
-          ? `Found ${found.length} of ${(missingMsgIds ?? []).length} messages`
+          ? `Found ${found.length} of ${missingCount} messages`
           : "Operation Successful",
       },
     });
