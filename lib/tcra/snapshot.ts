@@ -53,11 +53,11 @@ async function collectSentMsgIds(
 /**
  * Daily snapshot for one operation type.
  *
- * Per the TCRA technical specification, the `msgId` always ends with the
- * snapshot operation code (`OT06`), while `operationCode` identifies the
- * operation of the shipments being reconciled — `OT01` for today's accepted
- * shipments, `OT02` for dispatched, and so on. Sending `OT06` in
- * `operationCode` is reported by TCRA as a wrong operation type.
+ * Confirmed with TCRA (2026-11-18): `operationCode` answers "what is this API
+ * for?" and is therefore always the snapshot code `OT06`, while `operationType`
+ * answers "what is this snapshot for?" — `OT01` for the day's accepted
+ * shipments, `OT02` for dispatched, and so on. The `msgId` also keeps the
+ * snapshot suffix (`...-OT06-000001`).
  */
 export async function sendDailySnapshot(
   dateFrom: Date,
@@ -78,7 +78,7 @@ export async function sendDailySnapshot(
     msgInfo: {
       timestamp,
       msgId,
-      operationCode: operation,
+      operationCode: TcraOperationCode.SNAPSHOT,
       operatorCode: TCRA_OPERATOR_CODE,
       operationType: operation,
     },
