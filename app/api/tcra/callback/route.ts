@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifySignature } from "@/lib/tcra/signing";
-import { TcraResponseCode } from "@/lib/tcra/types";
+import { createTcraClient } from "@/lib/tcra/client";
+import { TcraResponseCode, type TcraEvent } from "@/lib/tcra/types";
 
 export const dynamic = "force-dynamic";
+// The client signs with node:crypto and posts through node:https.
+export const runtime = "nodejs";
+
+const client = createTcraClient();
 
 /**
  * TCRA's snapshot callback: it reports the msgIds it did not receive, so the
@@ -72,22 +77,65 @@ export async function POST(request: NextRequest) {
       `[tcra:callback] msgId=${msgInfo?.msgId ?? "-"} op=${msgInfo?.operationCode ?? "-"} callbackMsgId=${callbackMsgId} missing=${missingCount} body=${preview}`,
     );
 
-    const found: { msgId: string }[] = [];
+    let resent = 0;
+    let notFound = 0;
+    let failed = 0;
 
     for (const item of missingMsgIds) {
-      if (typeof item?.msgId !== "string" || item.msgId.length === 0) continue;
       // The events we sent live in the outbox, not in the tracking timeline.
-      const exists = await prisma.tcraOutbox.findFirst({
+      const row = await prisma.tcraOutbox.findFirst({
         where: {
           status: "SENT",
           payload: { path: ["eventsList"], array_contains: [{ msgInfo: { msgId: item.msgId } }] },
         },
-        select: { id: true },
+        select: { id: true, payload: true },
       });
-      if (exists) found.push(item);
+
+      if (!row) {
+        notFound += 1;
+        console.warn(`[tcra:callback] msgId not in outbox: ${item.msgId}`);
+        continue;
+      }
+
+      const payload = row.payload as { eventsList?: TcraEvent[] } | null;
+      const event = payload?.eventsList?.find((entry) => entry?.msgInfo?.msgId === item.msgId);
+      if (!event) {
+        notFound += 1;
+        console.warn(`[tcra:callback] outbox row ${row.id} has no event ${item.msgId}`);
+        continue;
+      }
+
+      // Re-send the exact event under its original msgId so TCRA can reconcile
+      // it. pushEvents rebuilds the body in TCRA's declared field order and
+      // signs those bytes.
+      try {
+        const response = await client.pushEvents({ eventsList: [event] });
+        const code = Array.isArray(response) ? response[0]?.msgResponse?.code : undefined;
+        const txnId = Array.isArray(response) ? response[0]?.msgResponse?.txnId : undefined;
+        if (code === TcraResponseCode.OK) {
+          resent += 1;
+          console.info(`[tcra:callback] resent ${item.msgId} txnId=${txnId ?? "-"}`);
+        } else {
+          failed += 1;
+          console.warn(`[tcra:callback] resend ${item.msgId} answered ${code ?? "no code"}`);
+        }
+      } catch (err) {
+        failed += 1;
+        console.error(`[tcra:callback] resend ${item.msgId} failed: ${(err as Error).message}`);
+      }
     }
 
     const timestamp = new Date().toISOString();
+
+    let message = "Operation Successful";
+    let code: TcraResponseCode = TcraResponseCode.OK;
+    if (missingCount > 0) {
+      message = `Received ${missingCount} missing msgIds, resent ${resent}`;
+      if (notFound > 0) message += `, not found ${notFound}`;
+      if (failed > 0) message += `, failed ${failed}`;
+      if (notFound > 0 || failed > 0) code = TcraResponseCode.GENERAL_ERROR;
+    }
+    console.info(`[tcra:callback] ${message} (${code})`);
 
     return NextResponse.json({
       msgInfo: {
@@ -95,11 +143,9 @@ export async function POST(request: NextRequest) {
         msgId: msgInfo?.msgId ?? "",
       },
       msgResponse: {
-        code: TcraResponseCode.OK,
+        code,
         txnId: `ack-${timestamp}-${Math.random().toString(36).slice(2, 8)}`,
-        message: found.length
-          ? `Found ${found.length} of ${missingCount} messages`
-          : "Operation Successful",
+        message,
       },
     });
   } catch (err) {
